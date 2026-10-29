@@ -1,0 +1,18 @@
+{
+  "name": "ollin",
+  "version": "0.0.0",
+  "description": "2D/2.5D game engine in TypeScript: data-oriented ECS, WASM and plugins.",
+  "type": "module",
+  "license": "MIT",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "dev": "vite examples/bunnymark",
+    "test": "vitest run",
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
