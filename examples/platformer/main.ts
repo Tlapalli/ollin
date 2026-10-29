@@ -1,5 +1,5 @@
-import { audio, createGame, input, webgl2 } from '../../src'
-import { rapier } from '../../src/rapier'
+import { audio, createGame, devtools, input, webgl2 } from '../../src'
+import { Collider, rapier, RigidBody } from '../../src/rapier'
 import { level } from './level'
 
 // Arrow keys or A/D to roll, Space or Up to jump. Map made in Tiled format: examples/platformer/map.tmj.
@@ -9,7 +9,7 @@ canvas.height = innerHeight * devicePixelRatio
 
 const game = await createGame({
   canvas,
-  plugins: [webgl2({ background: [0.11, 0.09, 0.08, 1] }), input(), rapier({ gravity: 25, scale: 32 }), audio()],
+  plugins: [webgl2({ background: [0.11, 0.09, 0.08, 1] }), input(), rapier({ gravity: 25, scale: 32 }), audio(), devtools({ components: { RigidBody, Collider } })],
 })
 
 await game.scene(level)

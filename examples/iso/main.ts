@@ -1,4 +1,4 @@
-import { Animation, Camera, createGame, input, Input, loadTilemap, Position, Renderer, spawnText, Sprite, webgl2 } from '../../src'
+import { Animation, Camera, createGame, devtools, input, Input, loadTilemap, Position, Renderer, spawnText, Sprite, webgl2 } from '../../src'
 
 // Arrow keys or WASD to walk around the temple blocks. The blocks layer is y-sorted, so the walker
 // goes behind blocks that are closer to the camera and in front of the ones behind it.
@@ -6,7 +6,7 @@ const canvas = document.querySelector('canvas')!
 canvas.width = innerWidth * devicePixelRatio
 canvas.height = innerHeight * devicePixelRatio
 
-const game = await createGame({ canvas, plugins: [webgl2({ background: [0.11, 0.09, 0.08, 1] }), input()] })
+const game = await createGame({ canvas, plugins: [webgl2({ background: [0.11, 0.09, 0.08, 1] }), input(), devtools()] })
 const { world } = game
 const renderer = game.get(Renderer)
 const camera = game.get(Camera)

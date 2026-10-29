@@ -1,4 +1,4 @@
-import { createGame, input, Input, Position, Renderer, Rotation, Sprite, webgl2 } from '../../src'
+import { createGame, devtools, input, Input, Position, Renderer, Rotation, Sprite, webgl2 } from '../../src'
 import { BodyType, Collider, rapier, RigidBody, Shape } from '../../src/rapier'
 import ballUrl from './ball.png'
 import boxUrl from './box.png'
@@ -9,7 +9,7 @@ const canvas = document.querySelector('canvas')!
 canvas.width = innerWidth * devicePixelRatio
 canvas.height = innerHeight * devicePixelRatio
 
-const game = await createGame({ canvas, plugins: [webgl2(), input(), rapier()] })
+const game = await createGame({ canvas, plugins: [webgl2(), input(), rapier(), devtools({ components: { RigidBody, Collider } })] })
 const { world } = game
 const renderer = game.get(Renderer)
 const pointer = game.get(Input).pointer
@@ -45,16 +45,5 @@ game.system((dt) => {
   )
 })
 
-const stats = document.querySelector('#stats')!
-let frames = 0
-let since = performance.now()
-game.system(() => {
-  frames++
-  const now = performance.now()
-  if (now - since < 500) return
-  stats.textContent = `${world.count} entities · ${Math.round((frames * 1000) / (now - since))} fps`
-  frames = 0
-  since = now
-}, 'render')
 
 game.start()

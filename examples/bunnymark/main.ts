@@ -1,4 +1,4 @@
-import { createGame, defineComponent, f32, input, Input, Position, Renderer, Sprite, webgl2 } from '../../src'
+import { createGame, defineComponent, devtools, f32, input, Input, Position, Renderer, Sprite, webgl2 } from '../../src'
 import glyph from './ollin.png'
 
 // Hold the mouse button to add glyphs. Measures how many it sustains at 60 fps.
@@ -6,12 +6,12 @@ const canvas = document.querySelector('canvas')!
 canvas.width = innerWidth * devicePixelRatio
 canvas.height = innerHeight * devicePixelRatio
 
-const game = await createGame({ canvas, capacity: 100_000, plugins: [webgl2(), input()] })
+const Velocity = defineComponent({ x: f32, y: f32 })
+
+const game = await createGame({ canvas, capacity: 100_000, plugins: [webgl2(), input(), devtools({ components: { Velocity } })] })
 const { world } = game
 const pointer = game.get(Input).pointer
 const texture = await game.get(Renderer).loadTexture(glyph)
-
-const Velocity = defineComponent({ x: f32, y: f32 })
 
 const SIZE = 32 * devicePixelRatio
 const GRAVITY = 1500 * devicePixelRatio
@@ -50,16 +50,5 @@ game.system((dt) => {
   }
 })
 
-const stats = document.querySelector('#stats')!
-let frames = 0
-let since = performance.now()
-game.system(() => {
-  frames++
-  const now = performance.now()
-  if (now - since < 500) return
-  stats.textContent = `${world.count} entities · ${Math.round((frames * 1000) / (now - since))} fps`
-  frames = 0
-  since = now
-}, 'render')
 
 game.start()

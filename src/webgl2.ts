@@ -40,6 +40,8 @@ export interface Renderer {
    * for `spawnText`. Glyphs are white so `Sprite.tint` colors them. Cached by options.
    */
   loadFont(options?: FontOptions): Promise<Font>
+  /** Last frame's totals, for profiling (`devtools()` shows them). */
+  readonly stats: { drawCalls: number; sprites: number }
 }
 
 export interface FontOptions {
@@ -189,6 +191,7 @@ export const webgl2 = ({ background = [0.1, 0.1, 0.1, 1] as [number, number, num
     const ySort = new Set<number>()
     const screen = new Set<number>()
     const scratch = newBatch()
+    const stats = { drawCalls: 0, sprites: 0 }
     const camera = createCamera(game.canvas.width, game.canvas.height)
 
     const cache = new Map<string, Promise<number>>()
@@ -245,6 +248,7 @@ export const webgl2 = ({ background = [0.1, 0.1, 0.1, 1] as [number, number, num
       },
       ySort,
       screen,
+      stats,
       loadFont(options = {}) {
         const key = `font ${JSON.stringify(options)}`
         let font = fonts.get(key)
@@ -332,6 +336,8 @@ export const webgl2 = ({ background = [0.1, 0.1, 0.1, 1] as [number, number, num
       gl.bufferData(gl.ARRAY_BUFFER, b.data.subarray(0, b.count * FLOATS_PER_SPRITE), gl.STREAM_DRAW)
       gl.bindTexture(gl.TEXTURE_2D, textures[texture].gl)
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, b.count)
+      stats.drawCalls++
+      stats.sprites += b.count
       b.count = 0
     }
 
@@ -390,6 +396,7 @@ export const webgl2 = ({ background = [0.1, 0.1, 0.1, 1] as [number, number, num
       ;({ w: sw, h: sh, frame: sframe, tint: stint, alpha: salpha, flipX: sflipX, flipY: sflipY } = Sprite)
       for (const byTexture of layers.values()) for (const batch of byTexture.values()) batch.count = 0
       for (const layer of sortedLayers.values()) layer.count = 0
+      stats.drawCalls = stats.sprites = 0
       const { z } = Position
       const { texture } = Sprite
       // Consecutive sprites usually share z and texture (tile layers, particles), so skip the map lookups for them.
