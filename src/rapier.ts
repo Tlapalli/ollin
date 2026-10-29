@@ -17,6 +17,8 @@ export const RigidBody = defineComponent({ type: u8, created: u8 })
 export const Collider = defineComponent({ shape: u8, w: f32, h: f32, density: f32, friction: f32, restitution: f32 })
 
 export interface Physics {
+  /** The Rapier module (`Ray`, `ColliderDesc`, ...), so games don't import their own copy. */
+  rapier: typeof RAPIER
   /** The Rapier world, for raycasts, joints and anything the components don't cover. */
   world: RAPIER.World
   /** Rapier body of an entity, to apply impulses or read velocities. */
@@ -65,7 +67,7 @@ export const rapier = ({ gravity = 9.81, scale = 50 }: RapierOptions = {}): Plug
       bodies.delete(e)
     }
 
-    game.set(Physics, { world: physics, body: (e) => bodies.get(e), scale })
+    game.set(Physics, { rapier: RAPIER, world: physics, body: (e) => bodies.get(e), scale })
 
     game.system(() => {
       // Despawned entities (or a removed RigidBody) leave a body behind; a recycled id comes back with created = 0.
