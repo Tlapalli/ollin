@@ -104,9 +104,11 @@ type Init<C> = readonly [C, NoInfer<Values<C>>?]
 export class World {
   private capacity: number
   private next = 0
-  // ponytail: ids are recycled without generations, so a stale Entity can point at a new one; add generations when entities are held across frames
+  // ponytail: ids are recycled and an Entity is a bare number, so a stale id can point at a new entity. Code that holds
+  // entities across frames (tweens) compares `world.generation(e)`; pack it into the id if that gets common
   private readonly free: Entity[] = []
   private alive: Uint8Array
+  private generations: Uint32Array
   private readonly components = new Set<Component>()
   private readonly queries = new Map<string, Query>()
   private readonly ids = new Map<Component, number>()
@@ -114,6 +116,12 @@ export class World {
   constructor(capacity = 1024) {
     this.capacity = capacity
     this.alive = new Uint8Array(capacity)
+    this.generations = new Uint32Array(capacity)
+  }
+
+  /** Changes every time the id `e` is despawned, so `generation(e) !== saved` means `e` is no longer the same entity. */
+  generation(e: Entity) {
+    return this.generations[e]
   }
 
   get count() {
@@ -132,6 +140,7 @@ export class World {
     if (!this.alive[e]) return
     for (const c of this.components) if (meta(c).present[e]) this.remove(e, c)
     this.alive[e] = 0
+    this.generations[e]++
     this.free.push(e)
   }
 
@@ -186,6 +195,9 @@ export class World {
       const alive = new Uint8Array(this.capacity)
       alive.set(this.alive)
       this.alive = alive
+      const generations = new Uint32Array(this.capacity)
+      generations.set(this.generations)
+      this.generations = generations
       for (const c of this.components) resize(c, this.capacity)
     }
     return this.next++

@@ -96,7 +96,7 @@ describe('createGame', () => {
   it('switches scenes: drops scene systems and entities, runs cleanup, keeps plugin systems', async () => {
     const Tag = defineComponent({ v: u8 })
     const log: string[] = []
-    const game = await createGame({ canvas: {} as HTMLCanvasElement, plugins: [(g) => g.system(() => log.push('plugin'))] })
+    const game = await createGame({ canvas: {} as HTMLCanvasElement, plugins: [(g) => void g.system(() => log.push('plugin'))] })
     const tagged = game.world.query(Tag)
 
     await game.scene((g) => {

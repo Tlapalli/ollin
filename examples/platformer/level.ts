@@ -1,4 +1,4 @@
-import { Animation, Audio, Camera, Input, loadTilemap, Position, Renderer, Rotation, Sprite, spawnText, type Scene } from '../../src'
+import { Animation, Audio, burst, Camera, ease, Input, loadTilemap, mixColor, Position, Renderer, Rotation, Sprite, spawnText, tween, type Scene } from '../../src'
 import { BodyType, Collider, Physics, RigidBody, Shape } from '../../src/rapier'
 
 // The level is a scene: everything it spawns and every system it registers goes away when the scene changes
@@ -6,7 +6,7 @@ import { BodyType, Collider, Physics, RigidBody, Shape } from '../../src/rapier'
 export const level: Scene = async (game) => {
   const { world, canvas } = game
   const camera = game.get(Camera)
-  const keys = game.get(Input).keys
+  const { keys, pointers, gamepads } = game.get(Input)
   const physics = game.get(Physics)
   const sound = game.get(Audio)
 
@@ -16,6 +16,7 @@ export const level: Scene = async (game) => {
     renderer.loadTextures({
       player: new URL('./player.png', import.meta.url).href,
       seed: [new URL('./seed.png', import.meta.url).href, { frameWidth: 24, frameHeight: 24 }],
+      spark: new URL('./spark.png', import.meta.url).href,
     }),
     sound.load({ jump: new URL('./jump.wav', import.meta.url).href }),
     renderer.loadFont({ family: 'ui-monospace, monospace', size: 32, weight: 'bold' }),
@@ -48,14 +49,15 @@ export const level: Scene = async (game) => {
   const HUD = 100
   renderer.screen.add(HUD)
   const scale = devicePixelRatio
-  spawnText(world, font, 'arrows roll - space jump', { x: 16 * scale, y: 12 * scale, z: HUD, size: 14 * scale, tint: 0xf3e6c9, alpha: 0.8 })
+  spawnText(world, font, 'arrows roll - space jump - gamepad and touch too', { x: 16 * scale, y: 12 * scale, z: HUD, size: 14 * scale, tint: 0xf3e6c9, alpha: 0.8 })
   const score = spawnText(world, font, '', { x: canvas.width - 16 * scale, y: 12 * scale, z: HUD, size: 20 * scale, tint: 0x1f9e9a, align: 'right' })
   const showScore = () => score.set(collected === total ? `all ${total} seeds!` : `seeds ${collected}/${total}`)
   showScore()
 
-  // Feedback with alpha and tint: the ball fades in at the start, and the score flashes gold on each seed.
-  // Tint multiplies the texture, so it shows true colors on white art (glyphs) and only darkens colored art.
+  // Feedback: the ball fades in at the start, and each seed bursts into gold sparks while the score flashes gold.
+  // Tint multiplies the texture, so it shows true colors on white art (glyphs, sparks) and only darkens colored art.
   Sprite.alpha[player] = 0
+  tween(game, player, Sprite, { alpha: 1 }, { duration: 0.5, ease: ease.out })
   let flash = 0
 
   const SPEED = 7 // m/s
@@ -65,9 +67,14 @@ export const level: Scene = async (game) => {
   game.system(() => {
     const body = physics.body(player)
     if (!body) return
-    const left = keys.has('ArrowLeft') || keys.has('KeyA')
-    const right = keys.has('ArrowRight') || keys.has('KeyD')
-    const jump = keys.has('Space') || keys.has('ArrowUp') || keys.has('KeyW')
+    // Keyboard, the first gamepad (d-pad or left stick, A to jump), or touch: left and right thirds of the screen roll,
+    // the middle jumps. Several fingers at once work, e.g. hold right and tap the middle.
+    const pad = gamepads.find((p) => p)
+    const stick = pad?.axes[0] ?? 0
+    const touch = (from: number, to: number) => [...pointers.values()].some((p) => p.x >= from * canvas.width && p.x < to * canvas.width)
+    const left = keys.has('ArrowLeft') || keys.has('KeyA') || !!pad?.buttons[14]?.pressed || stick < -0.4 || touch(0, 1 / 3)
+    const right = keys.has('ArrowRight') || keys.has('KeyD') || !!pad?.buttons[15]?.pressed || stick > 0.4 || touch(2 / 3, 1)
+    const jump = keys.has('Space') || keys.has('ArrowUp') || keys.has('KeyW') || !!pad?.buttons[0]?.pressed || touch(1 / 3, 2 / 3)
     const v = body.linvel()
     // Grounded = something solid right below the ball (radius + a small margin), ignoring the player's own body.
     const ray = new physics.rapier.Ray(body.translation(), { x: 0, y: 1 })
@@ -89,6 +96,7 @@ export const level: Scene = async (game) => {
     for (let i = seeds.length - 1; i >= 0; i--) {
       const seed = seeds[i]
       if (Math.hypot(x[seed] - x[player], y[seed] - y[player]) > SIZE) continue
+      burst(world, { x: x[seed], y: y[seed], z: Position.z[seed], texture: textures.spark, tint: 0xf2c14e, size: 6, count: 14, speed: 160, gravity: 300, life: 0.5 })
       world.despawn(seed)
       seeds.splice(i, 1)
       collected++
@@ -97,9 +105,8 @@ export const level: Scene = async (game) => {
       showScore()
     }
     flash = Math.max(0, flash - dt * 2)
-    const tint = mix(0x1f9e9a, 0xf2c14e, flash) // xihuitl turquoise to gold
+    const tint = mixColor(0x1f9e9a, 0xf2c14e, flash) // xihuitl turquoise to gold
     for (const e of score.entities) Sprite.tint[e] = tint
-    Sprite.alpha[player] = Math.min(1, Sprite.alpha[player] + dt * 2)
   })
 
   // Camera: fit the map height, follow the player horizontally, stay inside the map.
@@ -110,11 +117,4 @@ export const level: Scene = async (game) => {
     camera.x += (target - camera.x) * Math.min(1, dt * 6)
     camera.y = map.height / 2
   })
-}
-
-/** Blends two 0xRRGGBB colors, `t` from 0 (a) to 1 (b). */
-const mix = (a: number, b: number, t: number) => {
-  let out = 0
-  for (const shift of [16, 8, 0]) out |= Math.round(((a >> shift) & 255) * (1 - t) + ((b >> shift) & 255) * t) << shift
-  return out
 }

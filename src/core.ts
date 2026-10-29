@@ -29,7 +29,8 @@ export interface Game {
   readonly fixedDt: number
   set<T>(key: Token<T>, value: T): void
   get<T>(key: Token<T>): T
-  system(fn: System, stage?: Stage): void
+  /** Registers a system; returns a function that removes it (tweens and timers remove themselves when done). */
+  system(fn: System, stage?: Stage): () => void
   /**
    * Switches to a scene: removes the systems the previous scene registered, runs its cleanup and despawns every
    * entity, then runs the new scene. Systems and resources from plugins stay. Call it again with the same scene
@@ -68,7 +69,12 @@ export async function createGame({ canvas, plugins = [], capacity, fixedDt = 1 /
     },
     system(fn, stage = 'update') {
       stages[stage].push(fn)
-      owned?.add(fn)
+      const scene = owned
+      scene?.add(fn)
+      return () => {
+        stages[stage] = stages[stage].filter((f) => f !== fn)
+        scene?.delete(fn)
+      }
     },
     // ponytail: a scene whose setup is still awaiting when the next switch starts will register into the new one;
     // add a scene generation check if quick successive switches (double saves under HMR) cause trouble

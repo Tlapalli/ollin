@@ -1,5 +1,5 @@
 import { Camera, createCamera } from './camera'
-import { animation, Position, Rotation, Sprite } from './components'
+import { animation, particles, Position, Rotation, Sprite } from './components'
 import { token, type Plugin } from './core'
 import { mat4, ortho } from './math'
 import type { Font } from './text'
@@ -295,6 +295,7 @@ export const webgl2 = ({ background = [0.1, 0.1, 0.1, 1] as [number, number, num
 
     const sprites = game.world.query(Position, Sprite)
     game.system(animation(game.world))
+    game.system(particles(game.world))
 
     // Component arrays, read once per frame at the top of the render system (they are replaced when the world grows).
     let px = Position.x, py = Position.y, pz = Position.z, angle = Rotation.angle
