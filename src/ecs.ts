@@ -28,9 +28,9 @@ interface Meta {
 }
 
 /**
- * A component is plain SoA storage indexed by entity: `Position.x[e]`.
- * Arrays are replaced when the world grows (and when WASM memory grows), so read
- * `Position.x` inside each system run; never cache it across frames.
+ * A component is plain SoA storage indexed by entity: `Position.x[e]`. Arrays are replaced when the world grows past
+ * its capacity (16k entities by default), so read `Position.x` inside each system run; never cache it across frames.
+ * A cached array from before the growth reads as empty (`undefined`), so the mistake shows up as vanishing sprites.
  */
 export type Component<S extends Schema = Schema> = { [K in keyof S]: InstanceType<S[K]> } & {
   readonly [META]: Meta
@@ -57,16 +57,15 @@ export function defineComponent<const S extends Schema>(schema: S, defaults: Par
 const meta = (c: Component) => c[META]
 const store = (c: Component) => c as unknown as Record<string, TypedArray>
 
+// Growing transfers the old buffer (often without copying) and detaches it, so stale cached arrays read as empty
+// instead of silently holding old data. Resizable buffers would keep arrays stable, but V8 runs loops over them ~3x slower.
+const grow = <T extends TypedArray>(array: T, capacity: number): T =>
+  new (array.constructor as new (buffer: ArrayBuffer) => T)((array.buffer as ArrayBuffer).transfer(capacity * array.BYTES_PER_ELEMENT))
+
 function resize(c: Component, capacity: number, keep = true) {
   const m = meta(c)
-  for (const f of m.fields) {
-    const next = new m.schema[f](capacity)
-    if (keep) next.set(store(c)[f])
-    store(c)[f] = next
-  }
-  const present = new Uint8Array(capacity)
-  if (keep) present.set(m.present)
-  m.present = present
+  for (const f of m.fields) store(c)[f] = keep ? grow(store(c)[f], capacity) : new m.schema[f](capacity)
+  m.present = keep ? grow(m.present, capacity) : new Uint8Array(capacity)
 }
 
 /** Live set of entities that have every listed component. Iterate `entities`; it stays dense. */
@@ -113,7 +112,7 @@ export class World {
   private readonly queries = new Map<string, Query>()
   private readonly ids = new Map<Component, number>()
 
-  constructor(capacity = 1024) {
+  constructor(capacity = 16_384) {
     this.capacity = capacity
     this.alive = new Uint8Array(capacity)
     this.generations = new Uint32Array(capacity)

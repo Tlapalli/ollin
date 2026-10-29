@@ -18,6 +18,18 @@ describe('ortho', () => {
 })
 
 describe('World', () => {
+  it('grows storage past capacity; arrays cached from before read as empty instead of stale', () => {
+    const Health = defineComponent({ hp: f32 }, { hp: 3 })
+    const world = new World(2)
+    world.spawn([Health])
+    const stale = Health.hp
+    const ids = Array.from({ length: 100 }, () => world.spawn([Health]))
+    expect(Health.hp[ids[99]]).toBe(3)
+    expect(Health.hp[0]).toBe(3) // kept across growth
+    expect(stale.length).toBe(0)
+    expect(stale[0]).toBeUndefined()
+  })
+
   const Pos = defineComponent({ x: f32, y: f32 })
   const Vel = defineComponent({ x: f32 })
   const Tag = defineComponent({ on: u8 })

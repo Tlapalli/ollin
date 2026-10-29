@@ -17,7 +17,7 @@ export type Stage = 'fixed' | 'update' | 'render'
 export interface GameOptions {
   canvas: HTMLCanvasElement
   plugins?: Plugin[]
-  /** Initial entity capacity; the world doubles it when full. */
+  /** Initial entity capacity; the world doubles it when full. Default 16,384. */
   capacity?: number
   /** Seconds per `fixed` step. Default 1/60. */
   fixedDt?: number
