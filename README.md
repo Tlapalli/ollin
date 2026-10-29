@@ -9,6 +9,7 @@
 - **Plugins:** plain `(game) => void` functions. Rendering, input, audio, physics (`ollin/rapier`) and 3D are all optional.
 - **Batteries that stay out of the way:** typed asset handles (no global string keys), spritesheets, a camera, and Tiled map import (orthogonal and isometric).
 - **Scenes with hot reload:** a level is a function; `game.scene(level)` swaps or restarts it, and Vite HMR restarts it in place when you save.
+- **Sprites that do the usual things:** spritesheet animation (`Animation`), tint, alpha and flip per sprite, and bitmap text from any CSS or web font (`renderer.loadFont` + `spawnText`), with screen-space layers for HUDs.
 - **2.5D:** z layers, plus y-sorted layers (`renderer.ySort.add(z)`) so characters walk behind and in front of walls and trees.
 
 ```ts
@@ -45,12 +46,12 @@ Each page reports main-thread work per frame: the time spent inside `requestAnim
 
 | Sprites | Ollin | Phaser Image | Phaser GPU layer |
 | ------: | ----: | -----------: | ---------------: |
-| 1,000 | 0.05 ms | 0.35 ms | 0.16 ms |
-| 5,000 | 0.21 ms | 1.54 ms | 1.08 ms |
-| 10,000 | 0.52 ms | 3.33 ms | 1.96 ms |
-| 20,000 | 1.34 ms | 6.87 ms | 3.99 ms |
+| 1,000 | 0.07 ms | 0.33 ms | 0.16 ms |
+| 5,000 | 0.28 ms | 1.58 ms | 0.90 ms |
+| 10,000 | 0.78 ms | 2.94 ms | 1.93 ms |
+| 20,000 | 1.97 ms | 7.06 ms | 3.99 ms |
 
-At 20,000 sprites Phaser spends 41% of the frame budget on sprites alone; Ollin spends 8%. Results under 1 ms are noisy (CPU frequency scaling), so read them as ratios.
+At 20,000 sprites Phaser spends 42% of the frame budget on sprites alone; Ollin spends 12%, with per-sprite tint, alpha and flip included like Phaser's. Results under 1 ms are noisy (CPU frequency scaling), so read them as ratios.
 
 Open `bench/ollin.html?count=N`, `bench/phaser.html?count=N` and `bench/phaser-gpu.html?mode=cpu&count=N` from `npm run dev` to reproduce; each page prints its average and p95 work per frame after a 4 s run. `phaser-gpu.html?mode=gpu` moves sprites with shader tweens instead, a ceiling for static scenery rather than the same workload.
 

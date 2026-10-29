@@ -16,5 +16,4 @@ await game.scene(level)
 // Hot reload: when level.ts changes, restart the new version of the scene without reloading the page.
 import.meta.hot?.accept('./level', (m) => m && game.scene(m.level))
 
-document.querySelector('#stats')!.textContent = '← → roll · space jump'
 game.start()

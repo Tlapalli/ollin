@@ -23,6 +23,7 @@ const META = Symbol('component')
 interface Meta {
   readonly fields: readonly string[]
   readonly schema: Schema
+  readonly defaults: Readonly<Record<string, number>>
   present: Uint8Array
 }
 
@@ -40,10 +41,14 @@ export type Entity = number
 
 // ponytail: component storage is global, so only one World is live at a time: a new World (game restart, HMR, tests)
 // takes the components over with fresh storage. Scope storage per world if several worlds must coexist
-export function defineComponent<const S extends Schema>(schema: S): Component<S> {
+/**
+ * `defineComponent({ hp: u16, speed: f32 }, { hp: 3 })`. Fields left out of `world.add`/`spawn` take their
+ * default, or 0 when there is none.
+ */
+export function defineComponent<const S extends Schema>(schema: S, defaults: Partial<Record<keyof S, number>> = {}): Component<S> {
   const fields = Object.keys(schema)
   const component: Record<string | symbol, unknown> = {
-    [META]: { fields, schema, present: new Uint8Array(0) } satisfies Meta,
+    [META]: { fields, schema, defaults: defaults as Record<string, number>, present: new Uint8Array(0) } satisfies Meta,
   }
   for (const f of fields) component[f] = new schema[f](0)
   return component as Component<S>
@@ -135,11 +140,11 @@ export class World {
     for (let e = 0; e < this.next; e++) this.despawn(e)
   }
 
-  /** Adds (or resets) a component. Fields not given in `values` are zeroed. */
+  /** Adds (or resets) a component. Fields not given in `values` take the component's defaults (0 if none). */
   add<C extends Component>(e: Entity, c: C, values?: Values<C>) {
     this.register(c)
     const m = meta(c)
-    for (const f of m.fields) store(c)[f][e] = (values as Record<string, number> | undefined)?.[f] ?? 0
+    for (const f of m.fields) store(c)[f][e] = (values as Record<string, number> | undefined)?.[f] ?? m.defaults[f] ?? 0
     if (m.present[e]) return
     m.present[e] = 1
     for (const q of this.queries.values()) if (q.components.includes(c) && q.matches(e)) q.insert(e)

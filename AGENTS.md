@@ -25,7 +25,8 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 - **ECS (`src/ecs.ts`):** components are SoA typed arrays indexed by entity (`Position.x[e]`). Systems iterate `query.entities`. Never introduce per-entity objects on hot paths.
 - **Never cache component arrays across frames** (`const { x } = Position` at module level). They are replaced when the world grows, and the same will happen when WASM memory grows. Read them at the top of each system run.
 - `world.spawn` takes tuples only (`[Position, { x: 1 }]`, `[Tag]`) so TypeScript rejects unknown fields. Keep it that way.
-- Built-in components live in `src/components.ts` (`Position`, `Rotation`, `Sprite`). The renderer draws every entity with `Position` + `Sprite`, centered on `Position` and rotated by `Rotation` if present.
+- Built-in components live in `src/components.ts` (`Position`, `Rotation`, `Sprite`, `Animation`). The renderer draws every entity with `Position` + `Sprite`, centered on `Position` and rotated by `Rotation` if present, and advances `Animation` (it writes `Sprite.frame`). `Sprite.tint` (0xRRGGBB, multiplies, so it shows true colors only on white art) and `alpha` travel as one packed RGBA word; `flipX`/`flipY` cost nothing (mirrored UVs).
+- Components can declare defaults: `defineComponent({ hp: u16 }, { hp: 3 })`. Use them whenever 0 would be a broken value (`Sprite.alpha`, `Sprite.tint`, `Animation.count`), so `spawn` stays short for beginners.
 - Component storage is global: only one `World` is live at a time, and a new one takes over its components with fresh storage.
 - **Plugins** are `(game: Game) => void | Promise<void>`. They register resources with `game.set(token, value)` and systems with `game.system(fn, stage)`. The core must not import any plugin.
 - **Scenes:** a scene is `(game) => cleanup?`. `game.scene(fn)` removes the systems the previous scene registered, runs its cleanup and calls `world.clear()`, then runs the new one; plugin systems and resources stay. Restart = call it again with the same scene. Hot reload is one line in the entry file: `import.meta.hot?.accept('./level', (m) => m && game.scene(m.level))` (see `examples/platformer`). Loaders (`loadTexture`, `audio.load`) cache by URL so restarts do not re-upload assets. Plugins must survive `world.clear()`: keep their queries and react to despawned entities, as the Rapier plugin does.
@@ -36,6 +37,7 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 - **Rendering:** WebGL2 now. WebGPU comes later behind the same plugin shape. 3D will be a plugin backed by three.js, bridged through `InstancedMesh.instanceMatrix`, not one `Object3D` per entity.
 - **Draw order:** sprites are batched per (z, texture). Higher `Position.z` draws on top; within the same z, texture id order, then spawn order. Layers in `renderer.ySort` draw instead in order of each sprite's bottom edge (`y + h / 2`), splitting draw calls only where the texture changes, so put sprites that interleave (walls, trees, characters) on one sorted layer and share a texture when you can. The sort reuses last frame's order, so it is cheap while most sprites stay put.
 - **Assets are typed handles, never global string keys:** `renderer.loadTextures({ box: url })` and `audio.load({ jump: url })` return objects with typed keys. Spritesheets and tilesets are grids (`frameWidth`/`frameHeight`) and `Sprite.frame` picks the cell.
+- **Screen layers and text:** z layers in `renderer.screen` ignore the camera and use canvas pixels (HUD, menus). `renderer.loadFont` renders printable ASCII of any CSS font into a white spritesheet; `spawnText` (`src/text.ts`, DOM-free) lays it out as one sprite per character, so text batches and tints like everything else.
 - **Camera** is a resource (`game.get(Camera)`) created by the renderer. The default view maps world pixels 1:1 to the canvas; use `camera.toWorld` for pointer coordinates.
 - **Tiled** (`src/tiled.ts`): `loadTilemap` fetches a JSON map (.tmj, orthogonal or isometric, CSV layers, embedded or .tsj tilesets) and `spawnTilemap` turns it into entities, one per tile, with `z = base + layer index`. Hidden layers spawn `Position` only, for collision. Tile images sit on the bottom of their cell like in Tiled, so tall isometric blocks grow upward. Keep `spawnTilemap` free of DOM and fetch so it stays testable in Node.
 - **WASM:** physics comes from Rapier (`src/rapier.ts`, `@dimforge/rapier2d-simd-compat`). Rapier owns its bodies, and a `fixed` system creates bodies for new entities, removes them for despawned ones and writes transforms back to `Position`/`Rotation`. Units: Rapier uses meters, the ECS uses pixels (`scale`, default 50 px/m). Write custom WASM only for measured hot paths.
@@ -49,6 +51,7 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 5. 2.5D: y-sorted layers and isometric Tiled maps (done).
 6. Packaging: dist build, typed exports, CI workflow, MIT license (done; GitHub repo and npm release pending).
 7. Scenes and hot reload (done).
-8. Devtools, WebGPU backend.
+8. Sprite animation, tint/alpha/flip, bitmap text and screen layers (done).
+9. Devtools, WebGPU backend.
 
 Out of scope for now: editor, networking, Canvas2D renderer.
