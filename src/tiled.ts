@@ -75,6 +75,9 @@ export interface Tilemap {
 export interface LoadedTileset {
   firstgid: number
   texture: number
+  /** Tile image size when it differs from the map grid (tall isometric blocks). Default: the map's tile size. */
+  tileWidth?: number
+  tileHeight?: number
 }
 
 // Tiled stores flip/rotation flags in the top four bits of each gid.
@@ -82,17 +85,27 @@ export interface LoadedTileset {
 const GID_MASK = 0x0fffffff
 
 /**
- * Spawns one entity per non-empty tile, centered in its cell, with `z = baseZ + layer index`
- * (object layers take an index too, so objects can sit between tile layers).
+ * Spawns one entity per non-empty tile with `z = baseZ + layer index` (object layers take an index too,
+ * so objects can sit between tile layers). Like Tiled, a tile image sits on the bottom of its cell, so tall
+ * tiles grow upward. Orthogonal cells are the grid squares; isometric cells are diamonds, and object
+ * positions are converted to screen pixels.
  * ponytail: one entity per tile; switch to chunked static meshes if maps reach hundreds of thousands of tiles
  */
 export function spawnTilemap(world: World, map: TiledMap, tilesets: LoadedTileset[], { z: baseZ = 0 } = {}): Tilemap {
-  if (map.orientation !== 'orthogonal') throw new Error(`Tiled: only orthogonal maps are supported, got "${map.orientation}"`)
+  const iso = map.orientation === 'isometric'
+  if (!iso && map.orientation !== 'orthogonal') throw new Error(`Tiled: only orthogonal and isometric maps are supported, got "${map.orientation}"`)
   if (map.infinite) throw new Error('Tiled: infinite maps are not supported; disable "Infinite" in the map properties')
 
   const { tilewidth: tw, tileheight: th } = map
   const sorted = [...tilesets].sort((a, b) => b.firstgid - a.firstgid)
-  const result: Tilemap = { width: map.width * tw, height: map.height * th, tileWidth: tw, tileHeight: th, layers: {}, objects: [] }
+  const result: Tilemap = iso
+    ? { width: ((map.width + map.height) * tw) / 2, height: ((map.width + map.height) * th) / 2, tileWidth: tw, tileHeight: th, layers: {}, objects: [] }
+    : { width: map.width * tw, height: map.height * th, tileWidth: tw, tileHeight: th, layers: {}, objects: [] }
+  // Isometric: the top corner of cell (col, row) is at ((col - row) * tw/2 + originX, (col + row) * th/2).
+  const originX = (map.height * tw) / 2
+  /** Bottom-center of a cell in pixels. */
+  const cellBottom = (col: number, row: number) =>
+    iso ? { x: (col - row) * (tw / 2) + originX, y: (col + row + 2) * (th / 2) } : { x: col * tw + tw / 2, y: (row + 1) * th }
   let index = 0
 
   const visit = (layer: TiledLayer) => {
@@ -105,7 +118,10 @@ export function spawnTilemap(world: World, map: TiledMap, tilesets: LoadedTilese
     if (layer.type === 'objectgroup') {
       for (const o of layer.objects) {
         const properties = Object.fromEntries((o.properties ?? []).map((p) => [p.name, p.value]))
-        result.objects.push({ id: o.id, name: o.name, type: o.class ?? o.type ?? '', layer: layer.name, z, x: o.x + ox, y: o.y + oy, width: o.width, height: o.height, properties })
+        // Isometric objects are stored in grid space where both axes are measured in tile heights.
+        const x = iso ? (o.x / th - o.y / th) * (tw / 2) + originX : o.x
+        const y = iso ? (o.x / th + o.y / th) * (th / 2) : o.y
+        result.objects.push({ id: o.id, name: o.name, type: o.class ?? o.type ?? '', layer: layer.name, z, x: x + ox, y: y + oy, width: o.width, height: o.height, properties })
       }
       return
     }
@@ -117,12 +133,15 @@ export function spawnTilemap(world: World, map: TiledMap, tilesets: LoadedTilese
       if (!gid) return
       const tileset = sorted.find((t) => t.firstgid <= gid)
       if (!tileset) return
-      const x = (i % layer.width) * tw + tw / 2 + ox
-      const y = Math.floor(i / layer.width) * th + th / 2 + oy
+      const w = tileset.tileWidth ?? tw
+      const h = tileset.tileHeight ?? th
+      const bottom = cellBottom(i % layer.width, Math.floor(i / layer.width))
+      const x = bottom.x + ox
+      const y = bottom.y - h / 2 + oy
       entities.push(
         layer.visible === false
           ? world.spawn([Position, { x, y, z }])
-          : world.spawn([Position, { x, y, z }], [Sprite, { w: tw, h: th, texture: tileset.texture, frame: gid - tileset.firstgid }]),
+          : world.spawn([Position, { x, y, z }], [Sprite, { w, h, texture: tileset.texture, frame: gid - tileset.firstgid }]),
       )
     })
   }
@@ -148,14 +167,16 @@ export async function loadTilemap(game: Game, url: string, options?: { z?: numbe
         tileset = { ...(await (await fetch(base)).json()), firstgid: ref.firstgid }
       }
       if (!tileset.image) throw new Error('Tiled: image collection tilesets are not supported')
+      const tileWidth = tileset.tilewidth ?? map.tilewidth
+      const tileHeight = tileset.tileheight ?? map.tileheight
       const texture = await renderer.loadTexture(new URL(tileset.image, base).href, {
-        frameWidth: tileset.tilewidth ?? map.tilewidth,
-        frameHeight: tileset.tileheight ?? map.tileheight,
+        frameWidth: tileWidth,
+        frameHeight: tileHeight,
         margin: tileset.margin,
         spacing: tileset.spacing,
         filter: 'nearest',
       })
-      return { firstgid: ref.firstgid, texture }
+      return { firstgid: ref.firstgid, texture, tileWidth, tileHeight }
     }),
   )
 

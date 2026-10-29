@@ -8,7 +8,10 @@ canvas.height = HEIGHT
 
 const game = await createGame({ canvas, capacity: COUNT, plugins: [webgl2()] })
 const { world } = game
-const texture = await game.get(Renderer).loadTexture(glyph)
+const renderer = game.get(Renderer)
+const texture = await renderer.loadTexture(glyph)
+// ?ysort draws every sprite in order of y, to measure the cost of a 2.5D layer.
+if (new URLSearchParams(location.search).has('ysort')) renderer.ySort.add(0)
 const Velocity = defineComponent({ x: f32, y: f32 })
 
 for (let n = 0; n < COUNT; n++) {

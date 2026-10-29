@@ -49,8 +49,37 @@ describe('spawnTilemap', () => {
     expect(world.has(solid, Position)).toBe(true)
     expect(world.has(solid, Sprite)).toBe(false)
     expect(Position.z[solid]).toBe(2)
-    expect(() => spawnTilemap(world, { ...map, orientation: 'isometric' }, [])).toThrow('orthogonal')
+    expect(() => spawnTilemap(world, { ...map, orientation: 'hexagonal' }, [])).toThrow('orthogonal')
     expect(() => spawnTilemap(world, { ...map, infinite: true }, [])).toThrow('infinite')
+  })
+})
+
+describe('spawnTilemap (isometric)', () => {
+  it('places tiles on diamond cells, bottom-aligns tall tiles and converts object positions', () => {
+    const world = new World()
+    // 2x2 map of 64x32 diamonds; the tileset images are 64x64 blocks.
+    const iso: TiledMap = {
+      orientation: 'isometric',
+      width: 2,
+      height: 2,
+      tilewidth: 64,
+      tileheight: 32,
+      tilesets: [{ firstgid: 1, image: 'blocks.png' }],
+      layers: [
+        { type: 'tilelayer', name: 'ground', width: 2, data: [1, 1, 1, 1] },
+        { type: 'objectgroup', name: 'things', objects: [{ id: 1, name: 'player', x: 32, y: 32, width: 0, height: 0 }] },
+      ],
+    }
+    const result = spawnTilemap(world, iso, [{ firstgid: 1, texture: 0, tileWidth: 64, tileHeight: 64 }])
+    const [a, b, c, d] = result.layers.ground
+    // Cell (0,0) is the top diamond: top corner at (64, 0), bottom corner at (64, 32), so the block's center is 32 above that.
+    expect([Position.x[a], Position.y[a], Sprite.w[a], Sprite.h[a]]).toEqual([64, 0, 64, 64])
+    expect([Position.x[b], Position.y[b]]).toEqual([96, 16]) // (col 1, row 0) is down-right
+    expect([Position.x[c], Position.y[c]]).toEqual([32, 16]) // (col 0, row 1) is down-left
+    expect([Position.x[d], Position.y[d]]).toEqual([64, 32])
+    expect(result).toMatchObject({ width: 128, height: 64 })
+    // The object sits at grid point (1, 1) in tile heights: the corner all four cells share.
+    expect(result.objects[0]).toMatchObject({ x: 64, y: 32 })
   })
 })
 

@@ -5,7 +5,7 @@
 ## Commands
 
 ```bash
-npm run dev        # Vite dev server for examples/ (bunnymark, physics, platformer)
+npm run dev        # Vite dev server for examples/ (bunnymark, physics, platformer, iso, bench)
 npm test           # Vitest
 npm run typecheck  # tsc (noEmit)
 ```
@@ -32,10 +32,10 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 - **Typed resources:** use `token<T>(name)`, never string keys.
 - **Math:** `mat4` is column-major in a `Float32Array`, the same layout as WebGL and three.js. Positions are `vec3`; `z` is 2.5D depth today and a real axis for the future 3D plugin.
 - **Rendering:** WebGL2 now. WebGPU comes later behind the same plugin shape. 3D will be a plugin backed by three.js, bridged through `InstancedMesh.instanceMatrix`, not one `Object3D` per entity.
-- **Draw order:** sprites are batched per (z, texture). Higher `Position.z` draws on top; within the same z, texture id order, then spawn order. Use z for layers, not for per-sprite depth sorting (that needs a sorted index buffer, not built yet).
+- **Draw order:** sprites are batched per (z, texture). Higher `Position.z` draws on top; within the same z, texture id order, then spawn order. Layers in `renderer.ySort` draw instead in order of each sprite's bottom edge (`y + h / 2`), splitting draw calls only where the texture changes, so put sprites that interleave (walls, trees, characters) on one sorted layer and share a texture when you can. The sort reuses last frame's order, so it is cheap while most sprites stay put.
 - **Assets are typed handles, never global string keys:** `renderer.loadTextures({ box: url })` and `audio.load({ jump: url })` return objects with typed keys. Spritesheets and tilesets are grids (`frameWidth`/`frameHeight`) and `Sprite.frame` picks the cell.
 - **Camera** is a resource (`game.get(Camera)`) created by the renderer. The default view maps world pixels 1:1 to the canvas; use `camera.toWorld` for pointer coordinates.
-- **Tiled** (`src/tiled.ts`): `loadTilemap` fetches a JSON map (.tmj, CSV layers, embedded or .tsj tilesets) and `spawnTilemap` turns it into entities, one per tile, with `z = base + layer index`. Hidden layers spawn `Position` only, for collision. Keep `spawnTilemap` free of DOM and fetch so it stays testable in Node.
+- **Tiled** (`src/tiled.ts`): `loadTilemap` fetches a JSON map (.tmj, orthogonal or isometric, CSV layers, embedded or .tsj tilesets) and `spawnTilemap` turns it into entities, one per tile, with `z = base + layer index`. Hidden layers spawn `Position` only, for collision. Tile images sit on the bottom of their cell like in Tiled, so tall isometric blocks grow upward. Keep `spawnTilemap` free of DOM and fetch so it stays testable in Node.
 - **WASM:** physics comes from Rapier (`src/rapier.ts`, `@dimforge/rapier2d-simd-compat`). Rapier owns its bodies, and a `fixed` system creates bodies for new entities, removes them for despawned ones and writes transforms back to `Position`/`Rotation`. Units: Rapier uses meters, the ECS uses pixels (`scale`, default 50 px/m). Write custom WASM only for measured hot paths.
 
 ## Roadmap
@@ -44,6 +44,7 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 2. ECS: `defineComponent`, cached typed queries, renderer driven by `Position` + `Sprite` (done).
 3. Rapier physics plugin with a fixed timestep (done).
 4. Typed asset loading, spritesheets, z-ordered batches, camera, Web Audio, Tiled maps (done). Benchmarked against Phaser 4.2.1: 3–7x less main-thread work per frame at 1k–20k sprites (README, Performance).
-5. WebGPU backend, scene HMR, devtools.
+5. 2.5D: y-sorted layers and isometric Tiled maps (done).
+6. Scenes + HMR, packaging (npm, CI), WebGPU backend, devtools.
 
 Out of scope for now: editor, networking, Canvas2D renderer.

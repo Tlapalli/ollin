@@ -7,7 +7,8 @@
 - **Performance first:** data lives in SoA `Float32Array`s that go straight to the GPU and can be shared with WASM.
 - **Thin friendly layer:** `createGame`, `spawn`, `query`. The data-oriented core stays exposed for those who need it.
 - **Plugins:** plain `(game) => void` functions. Rendering, input, audio, physics (`ollin/rapier`) and 3D are all optional.
-- **Batteries that stay out of the way:** typed asset handles (no global string keys), spritesheets, a camera, and Tiled map import.
+- **Batteries that stay out of the way:** typed asset handles (no global string keys), spritesheets, a camera, and Tiled map import (orthogonal and isometric).
+- **2.5D:** z layers, plus y-sorted layers (`renderer.ySort.add(z)`) so characters walk behind and in front of walls and trees.
 
 ```ts
 const game = await createGame({ canvas, plugins: [webgl2(), input()] })
@@ -47,7 +48,7 @@ Open `bench/ollin.html?count=N`, `bench/phaser.html?count=N` and `bench/phaser-g
 
 ```bash
 npm install
-npm run dev        # examples: bunnymark, physics and a Tiled platformer
+npm run dev        # examples: bunnymark, physics, a Tiled platformer, an isometric map and the Phaser benchmark
 npm test
 npm run typecheck
 ```
