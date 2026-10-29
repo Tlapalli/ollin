@@ -10,7 +10,7 @@ npm test           # Vitest
 npm run typecheck  # tsc (noEmit)
 ```
 
-Run `npm test` and `npm run typecheck` before calling a change done. For rendering or physics changes, also run the examples in a browser.
+Run `npm test` and `npm run typecheck` before calling a change done. For rendering or physics changes, also run the examples in a browser. For renderer or ECS hot-path changes, compare `examples/bench` (`ollin.html` vs `phaser.html` and `phaser-gpu.html?mode=cpu`, `?count=N`) before and after: it reports main-thread ms per frame. Measure with vsync on; with vsync off, GL backpressure shows up as work.
 
 ## Conventions
 
@@ -43,7 +43,7 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 1. Minimal vertical slice: loop, WebGL2 sprites, input, bunnymark (done).
 2. ECS: `defineComponent`, cached typed queries, renderer driven by `Position` + `Sprite` (done).
 3. Rapier physics plugin with a fixed timestep (done).
-4. Typed asset loading, spritesheets, z-ordered batches, camera, Web Audio, Tiled maps (done).
+4. Typed asset loading, spritesheets, z-ordered batches, camera, Web Audio, Tiled maps (done). Benchmarked against Phaser 4.2.1: 3–7x less main-thread work per frame at 1k–20k sprites (README, Performance).
 5. WebGPU backend, scene HMR, devtools.
 
 Out of scope for now: editor, networking, Canvas2D renderer.

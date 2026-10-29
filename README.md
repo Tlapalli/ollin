@@ -26,6 +26,23 @@ game.system((dt) => {
 game.start()
 ```
 
+## Performance
+
+`examples/bench` runs the same bouncing-sprite simulation in Ollin and in Phaser 4.2.1 on a 1280x720 canvas. Phaser runs it two ways: one `Image` game object per sprite (the idiomatic way), and a `SpriteGPULayer` updated with `editMember` every frame.
+
+Each page reports main-thread work per frame: the time spent inside `requestAnimationFrame` callbacks (simulation, engine and WebGL calls). That is what eats the 16.6 ms budget of a 60 fps frame. Measured in Chromium with vsync on, on an Apple M4 Max with the CPU throttled 4x to approximate a mid-range phone:
+
+| Sprites | Ollin | Phaser Image | Phaser GPU layer |
+| ------: | ----: | -----------: | ---------------: |
+| 1,000 | 0.05 ms | 0.35 ms | 0.16 ms |
+| 5,000 | 0.21 ms | 1.54 ms | 1.08 ms |
+| 10,000 | 0.52 ms | 3.33 ms | 1.96 ms |
+| 20,000 | 1.34 ms | 6.87 ms | 3.99 ms |
+
+At 20,000 sprites Phaser spends 41% of the frame budget on sprites alone; Ollin spends 8%. Results under 1 ms are noisy (CPU frequency scaling), so read them as ratios.
+
+Open `bench/ollin.html?count=N`, `bench/phaser.html?count=N` and `bench/phaser-gpu.html?mode=cpu&count=N` from `npm run dev` to reproduce; each page prints its average and p95 work per frame after a 4 s run. `phaser-gpu.html?mode=gpu` moves sprites with shader tweens instead, a ceiling for static scenery rather than the same workload.
+
 ## Development
 
 ```bash
