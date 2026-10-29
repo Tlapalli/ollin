@@ -38,7 +38,8 @@ export type Component<S extends Schema = Schema> = { [K in keyof S]: InstanceTyp
 export type Values<C> = C extends Component<infer S> ? Partial<Record<keyof S, number>> : never
 export type Entity = number
 
-// ponytail: component storage is global, so one World per game; scope storage per world if multiple worlds appear
+// ponytail: component storage is global, so only one World is live at a time: a new World (game restart, HMR, tests)
+// takes the components over with fresh storage. Scope storage per world if several worlds must coexist
 export function defineComponent<const S extends Schema>(schema: S): Component<S> {
   const fields = Object.keys(schema)
   const component: Record<string | symbol, unknown> = {
@@ -51,15 +52,15 @@ export function defineComponent<const S extends Schema>(schema: S): Component<S>
 const meta = (c: Component) => c[META]
 const store = (c: Component) => c as unknown as Record<string, TypedArray>
 
-function resize(c: Component, capacity: number) {
+function resize(c: Component, capacity: number, keep = true) {
   const m = meta(c)
   for (const f of m.fields) {
     const next = new m.schema[f](capacity)
-    next.set(store(c)[f])
+    if (keep) next.set(store(c)[f])
     store(c)[f] = next
   }
   const present = new Uint8Array(capacity)
-  present.set(m.present)
+  if (keep) present.set(m.present)
   m.present = present
 }
 
@@ -166,7 +167,7 @@ export class World {
     if (this.components.has(c)) return
     this.ids.set(c, this.ids.size)
     this.components.add(c)
-    if (meta(c).present.length < this.capacity) resize(c, this.capacity)
+    resize(c, this.capacity, false)
   }
 
   private allocate(): Entity {

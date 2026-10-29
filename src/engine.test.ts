@@ -48,6 +48,16 @@ describe('World', () => {
     expect(world.query(Pos, Tag)).toBe(world.query(Tag, Pos))
   })
 
+  it('gives a new World fresh component storage', () => {
+    const old = new World()
+    old.spawn([Pos, { x: 7 }])
+    const world = new World()
+    const q = world.query(Pos)
+    const e = world.spawn([Pos])
+    expect(q.entities).toEqual([e])
+    expect(Pos.x[e]).toBe(0)
+  })
+
   it('recycles despawned ids with zeroed data', () => {
     const world = new World()
     const e = world.spawn([Pos, { x: 9 }])
@@ -71,5 +81,15 @@ describe('createGame', () => {
     game.step(0.016)
     expect(log).toEqual(['update 0.016', 'render'])
     expect(() => game.get(token('Missing'))).toThrow('Missing')
+  })
+
+  it('runs fixed systems at a constant rate and carries the remainder', async () => {
+    const game = await createGame({ canvas: {} as HTMLCanvasElement, fixedDt: 0.25 })
+    let steps = 0
+    game.system(() => steps++, 'fixed')
+    game.step(0.625)
+    expect(steps).toBe(2)
+    game.step(0.125)
+    expect(steps).toBe(3)
   })
 })

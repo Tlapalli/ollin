@@ -6,7 +6,7 @@
 
 - **Performance first:** data lives in SoA `Float32Array`s that go straight to the GPU and can be shared with WASM.
 - **Thin friendly layer:** `createGame`, `spawn`, `query`. The data-oriented core stays exposed for those who need it.
-- **Plugins:** plain `(game) => void` functions. Rendering, input, physics and 3D are all optional.
+- **Plugins:** plain `(game) => void` functions. Rendering, input, physics (`ollin/rapier`) and 3D are all optional.
 
 ```ts
 const game = await createGame({ canvas, plugins: [webgl2(), input()] })
@@ -29,7 +29,7 @@ game.start()
 
 ```bash
 npm install
-npm run dev        # bunnymark: hold the mouse button to add sprites
+npm run dev        # examples: bunnymark and physics (hold the mouse button)
 npm test
 npm run typecheck
 ```

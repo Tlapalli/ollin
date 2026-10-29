@@ -1,4 +1,4 @@
-import { Position, Sprite } from './components'
+import { Position, Rotation, Sprite } from './components'
 import { token, type Plugin } from './core'
 import { mat4, ortho } from './math'
 
@@ -10,17 +10,21 @@ export interface Renderer {
 
 export const Renderer = token<Renderer>('Renderer')
 
-const FLOATS_PER_SPRITE = 5 // x, y, z, w, h
+const FLOATS_PER_SPRITE = 6 // x, y, z, w, h, angle
 
 const VERT = `#version 300 es
 layout(location = 0) in vec2 a_corner;
 layout(location = 1) in vec3 a_position;
 layout(location = 2) in vec2 a_size;
+layout(location = 3) in float a_angle;
 uniform mat4 u_viewProj;
 out vec2 v_uv;
 void main() {
   v_uv = a_corner;
-  gl_Position = u_viewProj * vec4(a_position.xy + a_corner * a_size, a_position.z, 1.0);
+  vec2 local = (a_corner - 0.5) * a_size;
+  float c = cos(a_angle), s = sin(a_angle);
+  vec2 world = a_position.xy + vec2(local.x * c - local.y * s, local.x * s + local.y * c);
+  gl_Position = u_viewProj * vec4(world, a_position.z, 1.0);
 }`
 
 const FRAG = `#version 300 es
@@ -72,6 +76,9 @@ export const webgl2 = ({ background = [0.1, 0.1, 0.1, 1] as [number, number, num
     gl.enableVertexAttribArray(2)
     gl.vertexAttribPointer(2, 2, gl.FLOAT, false, stride, 12)
     gl.vertexAttribDivisor(2, 1)
+    gl.enableVertexAttribArray(3)
+    gl.vertexAttribPointer(3, 1, gl.FLOAT, false, stride, 20)
+    gl.vertexAttribDivisor(3, 1)
 
     gl.enable(gl.BLEND)
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
@@ -104,6 +111,8 @@ export const webgl2 = ({ background = [0.1, 0.1, 0.1, 1] as [number, number, num
       for (const batch of batches) batch.count = 0
       const { x, y, z } = Position
       const { w, h, texture } = Sprite
+      const { angle } = Rotation
+      const { world } = game
       for (const e of sprites.entities) {
         const batch = batches[texture[e]]
         if (!batch) continue
@@ -118,6 +127,7 @@ export const webgl2 = ({ background = [0.1, 0.1, 0.1, 1] as [number, number, num
         batch.data[o + 2] = z[e]
         batch.data[o + 3] = w[e]
         batch.data[o + 4] = h[e]
+        batch.data[o + 5] = world.has(e, Rotation) ? angle[e] : 0
       }
 
       const { width, height } = game.canvas

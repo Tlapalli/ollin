@@ -4,13 +4,25 @@
   "description": "2D/2.5D game engine in TypeScript: data-oriented ECS, WASM and plugins.",
   "type": "module",
   "license": "MIT",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./rapier": "./src/rapier.ts"
+  },
   "scripts": {
-    "dev": "vite examples/bunnymark",
+    "dev": "vite examples",
     "test": "vitest run",
     "typecheck": "tsc"
   },
+  "peerDependencies": {
+    "@dimforge/rapier2d-simd-compat": "^0.21.0"
+  },
+  "peerDependenciesMeta": {
+    "@dimforge/rapier2d-simd-compat": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@dimforge/rapier2d-simd-compat": "^0.21.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"

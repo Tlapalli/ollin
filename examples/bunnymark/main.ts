@@ -32,15 +32,16 @@ const moving = world.query(Position, Velocity)
 game.system((dt) => {
   const { x, y } = Position
   const v = Velocity
-  const maxX = canvas.width - SIZE
-  const maxY = canvas.height - SIZE
+  const min = SIZE / 2
+  const maxX = canvas.width - min
+  const maxY = canvas.height - min
   for (const e of moving.entities) {
     v.y[e] += GRAVITY * dt
     x[e] += v.x[e] * dt
     y[e] += v.y[e] * dt
-    if (x[e] < 0 || x[e] > maxX) {
+    if (x[e] < min || x[e] > maxX) {
       v.x[e] *= -1
-      x[e] = Math.min(Math.max(x[e], 0), maxX)
+      x[e] = Math.min(Math.max(x[e], min), maxX)
     }
     if (y[e] > maxY) {
       v.y[e] *= -0.85
