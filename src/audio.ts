@@ -12,7 +12,7 @@ export interface Audio {
   context: AudioContext
   /** Master volume, 0–1. */
   volume: number
-  /** Loads and decodes sounds in parallel: `const s = await audio.load({ jump: jumpUrl })` gives a typed `s.jump`. */
+  /** Loads and decodes sounds in parallel: `const s = await audio.load({ jump: jumpUrl })` gives a typed `s.jump`. Cached by URL. */
   load<const M extends Record<string, string>>(manifest: M): Promise<{ [K in keyof M]: AudioBuffer }>
   /** Plays a sound and returns a function that stops it. */
   play(sound: AudioBuffer, options?: PlayOptions): () => void
@@ -24,6 +24,13 @@ export const audio = (): Plugin => (game) => {
   const context = new AudioContext()
   const master = context.createGain()
   master.connect(context.destination)
+  const cache = new Map<string, Promise<AudioBuffer>>()
+  const decode = (url: string) => {
+    let sound = cache.get(url)
+    if (!sound) cache.set(url, (sound = fetch(url).then((r) => r.arrayBuffer()).then((data) => context.decodeAudioData(data))))
+    sound.catch(() => cache.delete(url)) // a failed load can be retried
+    return sound
+  }
 
   // Browsers keep the context suspended until the first user gesture.
   const unlock = () => {
@@ -42,9 +49,7 @@ export const audio = (): Plugin => (game) => {
     },
     async load(manifest) {
       const entries = Object.entries(manifest)
-      const sounds = await Promise.all(
-        entries.map(async ([, url]) => context.decodeAudioData(await (await fetch(url)).arrayBuffer())),
-      )
+      const sounds = await Promise.all(entries.map(([, url]) => decode(url)))
       return Object.fromEntries(entries.map(([key], i) => [key, sounds[i]])) as never
     },
     play(sound, { volume = 1, loop = false, rate = 1 } = {}) {

@@ -28,6 +28,7 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 - Built-in components live in `src/components.ts` (`Position`, `Rotation`, `Sprite`). The renderer draws every entity with `Position` + `Sprite`, centered on `Position` and rotated by `Rotation` if present.
 - Component storage is global: only one `World` is live at a time, and a new one takes over its components with fresh storage.
 - **Plugins** are `(game: Game) => void | Promise<void>`. They register resources with `game.set(token, value)` and systems with `game.system(fn, stage)`. The core must not import any plugin.
+- **Scenes:** a scene is `(game) => cleanup?`. `game.scene(fn)` removes the systems the previous scene registered, runs its cleanup and calls `world.clear()`, then runs the new one; plugin systems and resources stay. Restart = call it again with the same scene. Hot reload is one line in the entry file: `import.meta.hot?.accept('./level', (m) => m && game.scene(m.level))` (see `examples/platformer`). Loaders (`loadTexture`, `audio.load`) cache by URL so restarts do not re-upload assets. Plugins must survive `world.clear()`: keep their queries and react to despawned entities, as the Rapier plugin does.
 - **Stages:** `fixed` runs at `game.fixedDt` (default 1/60) as many times as the frame needs, then `update` and `render` once per frame. Physics and deterministic logic go in `fixed`.
 - Plugins with heavy dependencies ship as subpath exports (`ollin/rapier`) and declare the dependency as an optional peer, so the core never downloads them. Each subpath is a build entry in `vite.lib.ts` and an `exports` entry in `package.json`; shared modules land in one chunk so component storage stays a single instance.
 - **Typed resources:** use `token<T>(name)`, never string keys.
@@ -47,6 +48,7 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 4. Typed asset loading, spritesheets, z-ordered batches, camera, Web Audio, Tiled maps (done). Benchmarked against Phaser 4.2.1: 3–7x less main-thread work per frame at 1k–20k sprites (README, Performance).
 5. 2.5D: y-sorted layers and isometric Tiled maps (done).
 6. Packaging: dist build, typed exports, CI workflow, MIT license (done; GitHub repo and npm release pending).
-7. Scenes + HMR, devtools, WebGPU backend.
+7. Scenes and hot reload (done).
+8. Devtools, WebGPU backend.
 
 Out of scope for now: editor, networking, Canvas2D renderer.

@@ -6,6 +6,11 @@ export const token = <T>(name: string) => Symbol(name) as Token<T>
 
 export type System = (dt: number) => void
 export type Plugin = (game: Game) => void | Promise<void>
+/**
+ * A level, menu or screen. It spawns entities and registers systems; it may return a cleanup function
+ * for anything else it set up (DOM listeners, timers). See `game.scene`.
+ */
+export type Scene = (game: Game) => void | (() => void) | Promise<void | (() => void)>
 /** `fixed` runs at a constant rate (physics, deterministic logic), then `update` and `render` once per frame. */
 export type Stage = 'fixed' | 'update' | 'render'
 
@@ -25,6 +30,13 @@ export interface Game {
   set<T>(key: Token<T>, value: T): void
   get<T>(key: Token<T>): T
   system(fn: System, stage?: Stage): void
+  /**
+   * Switches to a scene: removes the systems the previous scene registered, runs its cleanup and despawns every
+   * entity, then runs the new scene. Systems and resources from plugins stay. Call it again with the same scene
+   * to restart it. For hot reload during development:
+   * `import.meta.hot?.accept('./level', (m) => m && game.scene(m.level))`
+   */
+  scene(scene: Scene): Promise<void>
   /** Advances one frame manually; useful in tests and environments without requestAnimationFrame. */
   step(dt: number): void
   start(): void
@@ -41,6 +53,9 @@ export async function createGame({ canvas, plugins = [], capacity, fixedDt = 1 /
   let accumulator = 0
   let frame = 0
   let last = 0
+  // Systems registered while a scene is active belong to it and are removed when the scene changes.
+  let owned: Set<System> | undefined
+  let cleanup: (() => void) | void
 
   const game: Game = {
     canvas,
@@ -51,7 +66,23 @@ export async function createGame({ canvas, plugins = [], capacity, fixedDt = 1 /
       if (!resources.has(key)) throw new Error(`Resource not registered: ${key.description}`)
       return resources.get(key) as never
     },
-    system: (fn, stage = 'update') => void stages[stage].push(fn),
+    system(fn, stage = 'update') {
+      stages[stage].push(fn)
+      owned?.add(fn)
+    },
+    // ponytail: a scene whose setup is still awaiting when the next switch starts will register into the new one;
+    // add a scene generation check if quick successive switches (double saves under HMR) cause trouble
+    async scene(scene) {
+      if (owned) {
+        const old = owned
+        // New arrays rather than splicing, so a stage that is iterating right now finishes safely.
+        for (const stage of Object.keys(stages) as Stage[]) stages[stage] = stages[stage].filter((fn) => !old.has(fn))
+      }
+      cleanup?.()
+      game.world.clear()
+      owned = new Set()
+      cleanup = await scene(game)
+    },
     step(dt) {
       accumulator += dt
       while (accumulator >= fixedDt) {

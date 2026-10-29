@@ -130,6 +130,11 @@ export class World {
     this.free.push(e)
   }
 
+  /** Despawns every entity. Queries and component registrations stay, so plugins keep working. */
+  clear() {
+    for (let e = 0; e < this.next; e++) this.despawn(e)
+  }
+
   /** Adds (or resets) a component. Fields not given in `values` are zeroed. */
   add<C extends Component>(e: Entity, c: C, values?: Values<C>) {
     this.register(c)

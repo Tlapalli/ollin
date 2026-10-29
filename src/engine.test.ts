@@ -92,4 +92,30 @@ describe('createGame', () => {
     game.step(0.125)
     expect(steps).toBe(3)
   })
+
+  it('switches scenes: drops scene systems and entities, runs cleanup, keeps plugin systems', async () => {
+    const Tag = defineComponent({ v: u8 })
+    const log: string[] = []
+    const game = await createGame({ canvas: {} as HTMLCanvasElement, plugins: [(g) => g.system(() => log.push('plugin'))] })
+    const tagged = game.world.query(Tag)
+
+    await game.scene((g) => {
+      g.world.spawn([Tag])
+      g.world.spawn([Tag])
+      g.system(() => log.push('a'))
+      return () => log.push('cleanup a')
+    })
+    game.step(0)
+    expect(log).toEqual(['plugin', 'a'])
+    expect(tagged.entities.length).toBe(2)
+
+    log.length = 0
+    await game.scene(async (g) => {
+      await Promise.resolve()
+      g.system(() => log.push('b'))
+    })
+    expect(tagged.entities.length).toBe(0)
+    game.step(0)
+    expect(log).toEqual(['cleanup a', 'plugin', 'b'])
+  })
 })

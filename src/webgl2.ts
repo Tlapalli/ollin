@@ -19,7 +19,7 @@ type TextureSource = string | readonly [url: string, options: TextureOptions]
 
 export interface Renderer {
   gl: WebGL2RenderingContext
-  /** Loads an image and returns its texture id, to be stored in `Sprite.texture`. */
+  /** Loads an image and returns its texture id, to be stored in `Sprite.texture`. Cached by URL and options, so restarting a scene reuses it. */
   loadTexture(url: string, options?: TextureOptions): Promise<number>
   /** Loads several textures in parallel: `const t = await loadTextures({ box: boxUrl })` gives a typed `t.box`. */
   loadTextures<const M extends Record<string, TextureSource>>(manifest: M): Promise<{ [K in keyof M]: number }>
@@ -152,7 +152,16 @@ export const webgl2 = ({ background = [0.1, 0.1, 0.1, 1] as [number, number, num
     let scratch = new Float32Array(256 * FLOATS_PER_SPRITE)
     const camera = createCamera(game.canvas.width, game.canvas.height)
 
-    const loadTexture: Renderer['loadTexture'] = async (url, options = {}) => {
+    const cache = new Map<string, Promise<number>>()
+    const loadTexture: Renderer['loadTexture'] = (url, options = {}) => {
+      const key = `${url} ${JSON.stringify(options)}`
+      let id = cache.get(key)
+      if (!id) cache.set(key, (id = upload(url, options)))
+      id.catch(() => cache.delete(key)) // a failed load can be retried
+      return id
+    }
+
+    const upload = async (url: string, options: TextureOptions) => {
       const img = new Image()
       img.src = url
       await img.decode()
