@@ -1,35 +1,26 @@
+import { Position, Sprite } from './components'
 import { token, type Plugin } from './core'
 import { mat4, ortho } from './math'
-import { SPRITE_FIELDS, Sprites } from './sprites'
-
-export interface Layer {
-  sprites: Sprites
-  texture: WebGLTexture
-}
 
 export interface Renderer {
   gl: WebGL2RenderingContext
-  /** Layers drawn in order. ponytail: one texture per layer; add an atlas when there are many images. */
-  layers: Layer[]
-  loadTexture(url: string): Promise<WebGLTexture>
-  /** Creates a sprite layer bound to a texture and adds it to the render. */
-  layer(texture: WebGLTexture, capacity?: number): Sprites
+  /** Loads an image and returns its texture id, to be stored in `Sprite.texture`. */
+  loadTexture(url: string): Promise<number>
 }
 
 export const Renderer = token<Renderer>('Renderer')
 
+const FLOATS_PER_SPRITE = 5 // x, y, z, w, h
+
 const VERT = `#version 300 es
 layout(location = 0) in vec2 a_corner;
-layout(location = 1) in float a_x;
-layout(location = 2) in float a_y;
-layout(location = 3) in float a_z;
-layout(location = 4) in float a_w;
-layout(location = 5) in float a_h;
+layout(location = 1) in vec3 a_position;
+layout(location = 2) in vec2 a_size;
 uniform mat4 u_viewProj;
 out vec2 v_uv;
 void main() {
   v_uv = a_corner;
-  gl_Position = u_viewProj * vec4(a_x + a_corner.x * a_w, a_y + a_corner.y * a_h, a_z, 1.0);
+  gl_Position = u_viewProj * vec4(a_position.xy + a_corner * a_size, a_position.z, 1.0);
 }`
 
 const FRAG = `#version 300 es
@@ -47,6 +38,12 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string) {
   return shader
 }
 
+/** Packed per-texture instance data, rebuilt every frame from the ECS. */
+interface Batch {
+  data: Float32Array
+  count: number
+}
+
 export const webgl2 = ({ background = [0.1, 0.1, 0.1, 1] as [number, number, number, number] } = {}): Plugin =>
   (game) => {
     const gl = game.canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: true })
@@ -59,29 +56,31 @@ export const webgl2 = ({ background = [0.1, 0.1, 0.1, 1] as [number, number, num
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? 'link')
     const uViewProj = gl.getUniformLocation(program, 'u_viewProj')
 
-    // One shared quad (TRIANGLE_STRIP) + one instanced buffer per SoA field.
+    // One shared quad (TRIANGLE_STRIP) + one interleaved, instanced buffer.
     const vao = gl.createVertexArray()
     gl.bindVertexArray(vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer())
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW)
     gl.enableVertexAttribArray(0)
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
-    const fieldBuffers = SPRITE_FIELDS.map((_, i) => {
-      const buffer = gl.createBuffer()
-      gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
-      gl.enableVertexAttribArray(i + 1)
-      gl.vertexAttribPointer(i + 1, 1, gl.FLOAT, false, 0, 0)
-      gl.vertexAttribDivisor(i + 1, 1)
-      return buffer
-    })
+    const instances = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, instances)
+    const stride = FLOATS_PER_SPRITE * 4
+    gl.enableVertexAttribArray(1)
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, stride, 0)
+    gl.vertexAttribDivisor(1, 1)
+    gl.enableVertexAttribArray(2)
+    gl.vertexAttribPointer(2, 2, gl.FLOAT, false, stride, 12)
+    gl.vertexAttribDivisor(2, 1)
 
     gl.enable(gl.BLEND)
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
     const viewProj = mat4()
+    const textures: WebGLTexture[] = []
+    const batches: Batch[] = []
 
-    const renderer: Renderer = {
+    game.set(Renderer, {
       gl,
-      layers: [],
       async loadTexture(url) {
         const img = new Image()
         img.src = url
@@ -93,17 +92,34 @@ export const webgl2 = ({ background = [0.1, 0.1, 0.1, 1] as [number, number, num
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-        return texture
+        batches.push({ data: new Float32Array(1024 * FLOATS_PER_SPRITE), count: 0 })
+        return textures.push(texture) - 1
       },
-      layer(texture, capacity) {
-        const sprites = new Sprites(capacity)
-        renderer.layers.push({ sprites, texture })
-        return sprites
-      },
-    }
+    })
 
-    game.set(Renderer, renderer)
+    const sprites = game.world.query(Position, Sprite)
     game.system(() => {
+      // ponytail: gather copy from entity-indexed storage into packed batches, one draw per texture in id order (no z sort);
+      // archetype tables or z-sorted batches if profiling or 2.5D scenes need them
+      for (const batch of batches) batch.count = 0
+      const { x, y, z } = Position
+      const { w, h, texture } = Sprite
+      for (const e of sprites.entities) {
+        const batch = batches[texture[e]]
+        if (!batch) continue
+        if ((batch.count + 1) * FLOATS_PER_SPRITE > batch.data.length) {
+          const data = new Float32Array(batch.data.length * 2)
+          data.set(batch.data)
+          batch.data = data
+        }
+        const o = batch.count++ * FLOATS_PER_SPRITE
+        batch.data[o] = x[e]
+        batch.data[o + 1] = y[e]
+        batch.data[o + 2] = z[e]
+        batch.data[o + 3] = w[e]
+        batch.data[o + 4] = h[e]
+      }
+
       const { width, height } = game.canvas
       gl.viewport(0, 0, width, height)
       gl.clearColor(...background)
@@ -111,15 +127,12 @@ export const webgl2 = ({ background = [0.1, 0.1, 0.1, 1] as [number, number, num
       gl.useProgram(program)
       gl.uniformMatrix4fv(uViewProj, false, ortho(viewProj, 0, width, height, 0, -1000, 1000))
       gl.bindVertexArray(vao)
-
-      for (const { sprites, texture } of renderer.layers) {
-        if (!sprites.count) continue
-        SPRITE_FIELDS.forEach((field, i) => {
-          gl.bindBuffer(gl.ARRAY_BUFFER, fieldBuffers[i])
-          gl.bufferData(gl.ARRAY_BUFFER, sprites[field].subarray(0, sprites.count), gl.STREAM_DRAW)
-        })
-        gl.bindTexture(gl.TEXTURE_2D, texture)
-        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, sprites.count)
-      }
+      gl.bindBuffer(gl.ARRAY_BUFFER, instances)
+      batches.forEach((batch, id) => {
+        if (!batch.count) return
+        gl.bufferData(gl.ARRAY_BUFFER, batch.data.subarray(0, batch.count * FLOATS_PER_SPRITE), gl.STREAM_DRAW)
+        gl.bindTexture(gl.TEXTURE_2D, textures[id])
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, batch.count)
+      })
     }, 'render')
   }

@@ -1,3 +1,5 @@
+import { World } from './ecs'
+
 /** Typed key for a shared resource (renderer, input, physics...). */
 export type Token<T> = symbol & { readonly __type?: T }
 export const token = <T>(name: string) => Symbol(name) as Token<T>
@@ -9,10 +11,13 @@ export type Stage = 'update' | 'render'
 export interface GameOptions {
   canvas: HTMLCanvasElement
   plugins?: Plugin[]
+  /** Initial entity capacity; the world doubles it when full. */
+  capacity?: number
 }
 
 export interface Game {
   readonly canvas: HTMLCanvasElement
+  readonly world: World
   set<T>(key: Token<T>, value: T): void
   get<T>(key: Token<T>): T
   system(fn: System, stage?: Stage): void
@@ -24,7 +29,7 @@ export interface Game {
 
 const MAX_DT = 0.1 // ponytail: capped variable dt; switch to a fixed step when physics (Rapier) lands
 
-export async function createGame({ canvas, plugins = [] }: GameOptions): Promise<Game> {
+export async function createGame({ canvas, plugins = [], capacity }: GameOptions): Promise<Game> {
   const resources = new Map<symbol, unknown>()
   const stages: Record<Stage, System[]> = { update: [], render: [] }
   let frame = 0
@@ -32,6 +37,7 @@ export async function createGame({ canvas, plugins = [] }: GameOptions): Promise
 
   const game: Game = {
     canvas,
+    world: new World(capacity),
     set: (key, value) => void resources.set(key, value),
     get(key) {
       if (!resources.has(key)) throw new Error(`Resource not registered: ${key.description}`)

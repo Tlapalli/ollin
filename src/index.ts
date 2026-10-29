@@ -1,5 +1,6 @@
 export * from './core'
+export * from './ecs'
+export * from './components'
 export * from './math'
-export * from './sprites'
 export * from './input'
 export * from './webgl2'

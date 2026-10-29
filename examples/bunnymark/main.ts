@@ -1,4 +1,4 @@
-import { createGame, input, Input, Renderer, webgl2 } from '../../src'
+import { createGame, defineComponent, f32, input, Input, Position, Renderer, Sprite, webgl2 } from '../../src'
 import glyph from './ollin.png'
 
 // Hold the mouse button to add glyphs. Measures how many it sustains at 60 fps.
@@ -6,38 +6,46 @@ const canvas = document.querySelector('canvas')!
 canvas.width = innerWidth * devicePixelRatio
 canvas.height = innerHeight * devicePixelRatio
 
-const game = await createGame({ canvas, plugins: [webgl2(), input()] })
-const renderer = game.get(Renderer)
+const game = await createGame({ canvas, capacity: 100_000, plugins: [webgl2(), input()] })
+const { world } = game
 const pointer = game.get(Input).pointer
-const sprites = renderer.layer(await renderer.loadTexture(glyph), 100_000)
+const texture = await game.get(Renderer).loadTexture(glyph)
+
+const Velocity = defineComponent({ x: f32, y: f32 })
 
 const SIZE = 32 * devicePixelRatio
 const GRAVITY = 1500 * devicePixelRatio
-let vx = new Float32Array(sprites.capacity)
-let vy = new Float32Array(sprites.capacity)
+const SPEED = 1000 * devicePixelRatio
 
-game.system((dt) => {
-  if (pointer.down) {
-    for (let n = 0; n < 500; n++) sprites.add(pointer.x, pointer.y, SIZE, SIZE)
-    if (vx.length < sprites.capacity) {
-      vx = grow(vx, sprites.capacity)
-      vy = grow(vy, sprites.capacity)
-    }
-    for (let i = sprites.count - 500; i < sprites.count; i++) {
-      vx[i] = (Math.random() - 0.5) * 1000 * devicePixelRatio
-      vy[i] = (Math.random() - 0.5) * 1000 * devicePixelRatio
-    }
+game.system(() => {
+  if (!pointer.down) return
+  for (let n = 0; n < 500; n++) {
+    world.spawn(
+      [Position, { x: pointer.x, y: pointer.y }],
+      [Velocity, { x: (Math.random() - 0.5) * SPEED, y: (Math.random() - 0.5) * SPEED }],
+      [Sprite, { w: SIZE, h: SIZE, texture }],
+    )
   }
+})
 
-  const { x, y } = sprites
+const moving = world.query(Position, Velocity)
+game.system((dt) => {
+  const { x, y } = Position
+  const v = Velocity
   const maxX = canvas.width - SIZE
   const maxY = canvas.height - SIZE
-  for (let i = 0; i < sprites.count; i++) {
-    vy[i] += GRAVITY * dt
-    x[i] += vx[i] * dt
-    y[i] += vy[i] * dt
-    if (x[i] < 0 || x[i] > maxX) { vx[i] *= -1; x[i] = Math.min(Math.max(x[i], 0), maxX) }
-    if (y[i] > maxY) { vy[i] *= -0.85; y[i] = maxY }
+  for (const e of moving.entities) {
+    v.y[e] += GRAVITY * dt
+    x[e] += v.x[e] * dt
+    y[e] += v.y[e] * dt
+    if (x[e] < 0 || x[e] > maxX) {
+      v.x[e] *= -1
+      x[e] = Math.min(Math.max(x[e], 0), maxX)
+    }
+    if (y[e] > maxY) {
+      v.y[e] *= -0.85
+      y[e] = maxY
+    }
   }
 })
 
@@ -48,15 +56,9 @@ game.system(() => {
   frames++
   const now = performance.now()
   if (now - since < 500) return
-  stats.textContent = `${sprites.count} sprites · ${Math.round((frames * 1000) / (now - since))} fps`
+  stats.textContent = `${world.count} entities · ${Math.round((frames * 1000) / (now - since))} fps`
   frames = 0
   since = now
 }, 'render')
 
 game.start()
-
-function grow(a: Float32Array, size: number) {
-  const next = new Float32Array(size)
-  next.set(a)
-  return next
-}

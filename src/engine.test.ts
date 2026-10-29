@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createGame, token } from './core'
+import { defineComponent, f32, u8, World } from './ecs'
 import { mat4, ortho } from './math'
-import { Sprites } from './sprites'
 
 const project = (m: Float32Array, x: number, y: number) => [m[0] * x + m[12], m[5] * y + m[13]]
 
@@ -17,15 +17,44 @@ describe('ortho', () => {
   })
 })
 
-describe('Sprites', () => {
-  it('grows when full without losing data', () => {
-    const s = new Sprites(2)
-    s.add(1, 2, 3, 4)
-    s.add(5, 6, 7, 8, 9)
-    s.add(10, 11, 12, 13)
-    expect(s.capacity).toBe(4)
-    expect([...s.x.subarray(0, 3)]).toEqual([1, 5, 10])
-    expect(s.z[1]).toBe(9)
+describe('World', () => {
+  const Pos = defineComponent({ x: f32, y: f32 })
+  const Vel = defineComponent({ x: f32 })
+  const Tag = defineComponent({ on: u8 })
+
+  it('keeps queries in sync with spawn, add, remove and despawn', () => {
+    const world = new World(2)
+    const moving = world.query(Pos, Vel)
+    const a = world.spawn([Pos, { x: 1, y: 2 }], [Vel])
+    const b = world.spawn([Pos])
+    expect(moving.entities).toEqual([a])
+    expect([Pos.x[a], Pos.y[a], Vel.x[a]]).toEqual([1, 2, 0])
+
+    world.add(b, Vel, { x: 5 })
+    expect(moving.entities).toEqual([a, b])
+    world.remove(a, Vel)
+    expect(moving.entities).toEqual([b])
+    world.despawn(b)
+    expect(moving.entities).toEqual([])
+    expect(world.count).toBe(1)
+  })
+
+  it('grows storage without losing data and fills late queries', () => {
+    const world = new World(2)
+    const ids = [1, 2, 3, 4, 5].map((x) => world.spawn([Pos, { x }], [Tag]))
+    expect(Pos.x.length).toBeGreaterThanOrEqual(5)
+    expect(ids.map((e) => Pos.x[e])).toEqual([1, 2, 3, 4, 5])
+    expect(world.query(Tag, Pos).entities).toHaveLength(5)
+    expect(world.query(Pos, Tag)).toBe(world.query(Tag, Pos))
+  })
+
+  it('recycles despawned ids with zeroed data', () => {
+    const world = new World()
+    const e = world.spawn([Pos, { x: 9 }])
+    world.despawn(e)
+    const f = world.spawn([Pos])
+    expect(f).toBe(e)
+    expect(Pos.x[f]).toBe(0)
   })
 })
 
