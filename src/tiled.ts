@@ -1,7 +1,7 @@
 import { Position, Sprite } from './components'
 import type { Game } from './core'
 import type { Entity, World } from './ecs'
-import { Renderer } from './webgl2'
+import { Renderer } from './render'
 
 /** The subset of the Tiled JSON map format (.tmj) that Ollin reads. */
 export interface TiledMap {

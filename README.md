@@ -11,6 +11,7 @@
 - **Scenes with hot reload:** a level is a function; `game.scene(level)` swaps or restarts it, and Vite HMR restarts it in place when you save.
 - **Sprites that do the usual things:** spritesheet animation (`Animation`), tint, alpha and flip per sprite, and bitmap text from any CSS or web font (`renderer.loadFont` + `spawnText`), with screen-space layers for HUDs.
 - **Gameplay helpers:** `tween` any component field with easing, `after`/`every` timers that end with their scene, particle `burst`s, and input from keyboard, multi-touch and gamepads.
+- **WebGL2 or WebGPU:** `webgl2()` runs everywhere; `webgpu()` is a drop-in with the same API and output, and falls back to WebGL2 where WebGPU is missing.
 - **Devtools:** `devtools()` shows fps, main-thread ms per frame, entity, sprite and draw call counts; click a sprite to inspect its components live. Toggle with the key left of 1.
 - **2.5D:** z layers, plus y-sorted layers (`renderer.ySort.add(z)`) so characters walk behind and in front of walls and trees.
 
@@ -54,6 +55,8 @@ Each page reports main-thread work per frame: the time spent inside `requestAnim
 | 20,000 | 1.97 ms | 7.06 ms | 3.99 ms |
 
 At 20,000 sprites Phaser spends 42% of the frame budget on sprites alone; Ollin spends 12%, with per-sprite tint, alpha and flip included like Phaser's. Results under 1 ms are noisy (CPU frequency scaling), so read them as ratios.
+
+The WebGPU backend (`bench/ollin.html?webgpu`) costs about the same as WebGL2: within ±25% across runs, a little ahead at 20,000 sprites and a little behind under 5,000. The time goes to packing sprites in JavaScript, which both backends share.
 
 Open `bench/ollin.html?count=N`, `bench/phaser.html?count=N` and `bench/phaser-gpu.html?mode=cpu&count=N` from `npm run dev` to reproduce; each page prints its average and p95 work per frame after a 4 s run. `phaser-gpu.html?mode=gpu` moves sprites with shader tweens instead, a ceiling for static scenery rather than the same workload.
 

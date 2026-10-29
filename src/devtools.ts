@@ -2,7 +2,7 @@ import { Camera } from './camera'
 import { Animation, Position, Rotation, Sprite } from './components'
 import type { Plugin } from './core'
 import type { Component, Entity, World } from './ecs'
-import { Renderer } from './webgl2'
+import { Renderer } from './render'
 
 export interface DevtoolsOptions {
   /** `KeyboardEvent.code` that shows and hides the panel. Default `Backquote` (the key left of 1). */
@@ -68,7 +68,7 @@ export const devtools =
       if (!panel.hidden) {
         const { drawCalls, sprites: drawn } = renderer.stats
         panel.textContent =
-          `${Math.round((frames * 1000) / (now - since))} fps  ${(work / frames).toFixed(2)} ms/frame (max ${worst.toFixed(2)})\n` +
+          `${renderer.backend}  ${Math.round((frames * 1000) / (now - since))} fps  ${(work / frames).toFixed(2)} ms/frame (max ${worst.toFixed(2)})\n` +
           `${world.count} entities  ${drawn} sprites  ${drawCalls} draw calls\n` +
           inspect(world, named, selected)
       }

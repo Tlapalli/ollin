@@ -1,4 +1,4 @@
-import { createGame, defineComponent, f32, Position, Renderer, Sprite, webgl2 } from '../../src'
+import { createGame, defineComponent, f32, Position, Renderer, Sprite, webgl2, webgpu } from '../../src'
 import { COUNT, GRAVITY, HEIGHT, measure, SIZE, SPEED, WIDTH } from './bench'
 import glyph from './glyph.png'
 
@@ -6,7 +6,9 @@ const canvas = document.querySelector('canvas')!
 canvas.width = WIDTH
 canvas.height = HEIGHT
 
-const game = await createGame({ canvas, capacity: COUNT, plugins: [webgl2()] })
+// ?webgpu measures the WebGPU backend instead of WebGL2.
+const backend = new URLSearchParams(location.search).has('webgpu') ? webgpu : webgl2
+const game = await createGame({ canvas, capacity: COUNT, plugins: [backend()] })
 const { world } = game
 const renderer = game.get(Renderer)
 const texture = await renderer.loadTexture(glyph)

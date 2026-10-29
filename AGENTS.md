@@ -34,7 +34,7 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 - Plugins with heavy dependencies ship as subpath exports (`ollin/rapier`) and declare the dependency as an optional peer, so the core never downloads them. Each subpath is a build entry in `vite.lib.ts` and an `exports` entry in `package.json`; shared modules land in one chunk so component storage stays a single instance.
 - **Typed resources:** use `token<T>(name)`, never string keys.
 - **Math:** `mat4` is column-major in a `Float32Array`, the same layout as WebGL and three.js. Positions are `vec3`; `z` is 2.5D depth today and a real axis for the future 3D plugin.
-- **Rendering:** WebGL2 now. WebGPU comes later behind the same plugin shape. 3D will be a plugin backed by three.js, bridged through `InstancedMesh.instanceMatrix`, not one `Object3D` per entity.
+- **Rendering:** `src/render.ts` owns everything backend-neutral (the `Renderer` resource, batching, y-sort, textures, fonts, camera, stats). A backend implements `Backend` (`createTexture`, `begin`, `draw`, `end`) in `webgl2.ts` or `webgpu.ts`, so a renderer feature goes in `render.ts` once. `draw` must consume its data before returning, because the core reuses the array. WebGPU gathers the frame into one array, writes it to a pooled mapped staging buffer and copies it to the vertex buffer (`queue.writeBuffer` with ~1 MB/frame cost 0.9 ms of main thread), and remaps the WebGL-style depth to 0..1 in the shader. `webgpu()` falls back to `webgl2()`; examples use `webgl2()`. 3D will be a plugin backed by three.js, bridged through `InstancedMesh.instanceMatrix`, not one `Object3D` per entity.
 - **Draw order:** sprites are batched per (z, texture). Higher `Position.z` draws on top; within the same z, texture id order, then spawn order. Layers in `renderer.ySort` draw instead in order of each sprite's bottom edge (`y + h / 2`), splitting draw calls only where the texture changes, so put sprites that interleave (walls, trees, characters) on one sorted layer and share a texture when you can. The sort reuses last frame's order, so it is cheap while most sprites stay put.
 - **Assets are typed handles, never global string keys:** `renderer.loadTextures({ box: url })` and `audio.load({ jump: url })` return objects with typed keys. Spritesheets and tilesets are grids (`frameWidth`/`frameHeight`) and `Sprite.frame` picks the cell.
 - **Screen layers and text:** z layers in `renderer.screen` ignore the camera and use canvas pixels (HUD, menus). `renderer.loadFont` renders printable ASCII of any CSS font into a white spritesheet; `spawnText` (`src/text.ts`, DOM-free) lays it out as one sprite per character, so text batches and tints like everything else.
@@ -57,6 +57,6 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 8. Sprite animation, tint/alpha/flip, bitmap text and screen layers (done).
 9. Devtools: stats overlay and entity inspector (done).
 10. Gameplay helpers: tweens and timers, multi-touch and gamepad input, particles (done).
-11. WebGPU backend.
+11. WebGPU backend behind a shared renderer core (done; same cost as WebGL2, see README).
 
 Out of scope for now: editor, networking, Canvas2D renderer.
