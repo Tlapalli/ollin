@@ -8,6 +8,7 @@
 npm run dev        # Vite dev server for examples/ (bunnymark, physics, platformer, iso, bench)
 npm test           # Vitest
 npm run typecheck  # tsc (noEmit)
+npm run build      # dist/: Vite library build (JS) + tsc declarations
 ```
 
 Run `npm test` and `npm run typecheck` before calling a change done. For rendering or physics changes, also run the examples in a browser. For renderer or ECS hot-path changes, compare `examples/bench` (`ollin.html` vs `phaser.html` and `phaser-gpu.html?mode=cpu`, `?count=N`) before and after: it reports main-thread ms per frame. Measure with vsync on; with vsync off, GL backpressure shows up as work.
@@ -28,7 +29,7 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 - Component storage is global: only one `World` is live at a time, and a new one takes over its components with fresh storage.
 - **Plugins** are `(game: Game) => void | Promise<void>`. They register resources with `game.set(token, value)` and systems with `game.system(fn, stage)`. The core must not import any plugin.
 - **Stages:** `fixed` runs at `game.fixedDt` (default 1/60) as many times as the frame needs, then `update` and `render` once per frame. Physics and deterministic logic go in `fixed`.
-- Plugins with heavy dependencies ship as subpath exports (`ollin/rapier`) and declare the dependency as an optional peer, so the core never downloads them.
+- Plugins with heavy dependencies ship as subpath exports (`ollin/rapier`) and declare the dependency as an optional peer, so the core never downloads them. Each subpath is a build entry in `vite.lib.ts` and an `exports` entry in `package.json`; shared modules land in one chunk so component storage stays a single instance.
 - **Typed resources:** use `token<T>(name)`, never string keys.
 - **Math:** `mat4` is column-major in a `Float32Array`, the same layout as WebGL and three.js. Positions are `vec3`; `z` is 2.5D depth today and a real axis for the future 3D plugin.
 - **Rendering:** WebGL2 now. WebGPU comes later behind the same plugin shape. 3D will be a plugin backed by three.js, bridged through `InstancedMesh.instanceMatrix`, not one `Object3D` per entity.
@@ -45,6 +46,7 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 3. Rapier physics plugin with a fixed timestep (done).
 4. Typed asset loading, spritesheets, z-ordered batches, camera, Web Audio, Tiled maps (done). Benchmarked against Phaser 4.2.1: 3–7x less main-thread work per frame at 1k–20k sprites (README, Performance).
 5. 2.5D: y-sorted layers and isometric Tiled maps (done).
-6. Scenes + HMR, packaging (npm, CI), WebGPU backend, devtools.
+6. Packaging: dist build, typed exports, CI workflow, MIT license (done; GitHub repo and npm release pending).
+7. Scenes + HMR, devtools, WebGPU backend.
 
 Out of scope for now: editor, networking, Canvas2D renderer.

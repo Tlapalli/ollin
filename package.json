@@ -2,16 +2,42 @@
   "name": "ollin",
   "version": "0.0.0",
   "description": "2D/2.5D game engine in TypeScript: data-oriented ECS, WASM and plugins.",
-  "type": "module",
+  "keywords": [
+    "game-engine",
+    "2d",
+    "webgl2",
+    "ecs",
+    "wasm",
+    "rapier",
+    "tiled",
+    "isometric"
+  ],
   "license": "MIT",
+  "author": "Diego Resendez",
+  "type": "module",
+  "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts",
-    "./rapier": "./src/rapier.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./rapier": {
+      "types": "./dist/rapier.d.ts",
+      "import": "./dist/rapier.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
   },
   "scripts": {
     "dev": "vite examples",
     "test": "vitest run",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "build": "vite build -c vite.lib.ts && tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "peerDependencies": {
     "@dimforge/rapier2d-simd-compat": "^0.21.0"

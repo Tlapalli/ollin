@@ -27,6 +27,15 @@ game.system((dt) => {
 game.start()
 ```
 
+## Install
+
+```bash
+npm install ollin
+npm install @dimforge/rapier2d-simd-compat   # only if you use ollin/rapier
+```
+
+Ollin ships ES modules with TypeScript types and expects a bundler such as Vite. Rapier's own type definitions need `"skipLibCheck": true` (the Vite templates set it) or `"lib": ["ESNext", "DOM"]` in your `tsconfig.json`.
+
 ## Performance
 
 `examples/bench` runs the same bouncing-sprite simulation in Ollin and in Phaser 4.2.1 on a 1280x720 canvas. Phaser runs it two ways: one `Image` game object per sprite (the idiomatic way), and a `SpriteGPULayer` updated with `editMember` every frame.
