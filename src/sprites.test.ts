@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Animation, animation, Position, Sprite } from './components'
+import { Animation, animation, hit, overlaps, Position, Sprite } from './components'
 import { defineComponent, u16, World } from './ecs'
 import { spawnText, type Font } from './text'
 
@@ -52,4 +52,16 @@ describe('spawnText', () => {
     expect(world.count).toBe(2)
     expect(Position.x[text.entities[0]]).toBe(-6 - 1 + 4) // half of 12 px to the left, glyph padding, half a cell
   })
+})
+
+it('overlaps and hit test sprite boxes, with an inset for forgiving hits', () => {
+  const world = new World()
+  const a = world.spawn([Position, { x: 0, y: 0 }], [Sprite, { w: 10, h: 10 }])
+  const b = world.spawn([Position, { x: 8, y: 0 }], [Sprite, { w: 10, h: 10 }])
+  const c = world.spawn([Position, { x: 30, y: 0 }], [Sprite, { w: 10, h: 10 }])
+  expect(overlaps(a, b)).toBe(true)
+  expect(overlaps(a, b, 2)).toBe(false) // 2 px inset per side: 6 px boxes, 8 px apart
+  expect(overlaps(a, c)).toBe(false)
+  expect(hit(a, [a, c, b])).toBe(b)
+  expect(hit(a, [c])).toBe(-1)
 })

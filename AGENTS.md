@@ -5,7 +5,7 @@
 ## Commands
 
 ```bash
-npm run dev        # Vite dev server for examples/ (bunnymark, physics, platformer, iso, bench)
+npm run dev        # Vite dev server for examples/ (bunnymark, physics, platformer, iso, xolo, bench)
 npm test           # Vitest
 npm run typecheck  # tsc (noEmit)
 npm run build      # dist/: Vite library build (JS) + tsc declarations
@@ -39,8 +39,9 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 - **Assets are typed handles, never global string keys:** `renderer.loadTextures({ box: url })` and `audio.load({ jump: url })` return objects with typed keys. Spritesheets and tilesets are grids (`frameWidth`/`frameHeight`) and `Sprite.frame` picks the cell.
 - **Screen layers and text:** z layers in `renderer.screen` ignore the camera and use canvas pixels (HUD, menus). `renderer.loadFont` renders printable ASCII of any CSS font into a white spritesheet; `spawnText` (`src/text.ts`, DOM-free) lays it out as one sprite per character, so text batches and tints like everything else.
 - **Tweens and timers** (`src/tween.ts`) are systems that remove themselves: `game.system` returns a remover. Registered inside a scene, they end with it. Anything that holds an entity across frames must save `world.generation(e)` and stop when it changes, because ids are recycled (see `tween`).
-- **Input** is state, not events: `keys`, `pointer` (last one), `pointers` (every pressed finger, for multi-touch), `gamepads` (Gamepad API, standard mapping, refreshed in `fixed`). The plugin sets `touch-action: none` on the canvas.
-- **Devtools** (`src/devtools.ts`) is a DOM overlay, not sprites, so it survives `world.clear()` and stays out of the counts it shows. It measures main-thread work by wrapping `game.step` and reads `renderer.stats` (draw calls and sprites, reset each frame). Components show in the inspector only if named: built-ins always, others through `devtools({ components: { Velocity } })`.
+- **Input** is state, not events: `keys`, `pointer` (last one), `pointers` (every pressed finger, for multi-touch), `gamepads` (Gamepad API, standard mapping, refreshed at the start of `update`), and `pressed` for one-shot actions: what went down this frame (key codes, `Pointer`, `Button0`–`Button16`), cleared in `render`. The plugin sets `touch-action: none` on the canvas.
+- **Simple collisions** without Rapier: `overlaps(a, b, inset)` and `hit(e, others, inset)` test sprite boxes (`src/components.ts`). Use Rapier when things must push each other.
+- **Devtools** (`src/devtools.ts`) is a DOM overlay, not sprites, so it survives `world.clear()` and stays out of the counts it shows. It measures main-thread work by wrapping `game.step` and reads `renderer.stats` (draw calls and sprites, reset each frame). It also sets `globalThis.ollin = { game }` for the browser console. Components show in the inspector only if named: built-ins always, others through `devtools({ components: { Velocity } })`.
 - **Camera** is a resource (`game.get(Camera)`) created by the renderer. The default view maps world pixels 1:1 to the canvas; use `camera.toWorld` for pointer coordinates.
 - **Tiled** (`src/tiled.ts`): `loadTilemap` fetches a JSON map (.tmj, orthogonal or isometric, CSV layers, embedded or .tsj tilesets) and `spawnTilemap` turns it into entities, one per tile, with `z = base + layer index`. Hidden layers spawn `Position` only, for collision. Tile images sit on the bottom of their cell like in Tiled, so tall isometric blocks grow upward. Keep `spawnTilemap` free of DOM and fetch so it stays testable in Node.
 - **WASM:** physics comes from Rapier (`src/rapier.ts`, `@dimforge/rapier2d-simd-compat`). Rapier owns its bodies, and a `fixed` system creates bodies for new entities, removes them for despawned ones and writes transforms back to `Position`/`Rotation`. Units: Rapier uses meters, the ECS uses pixels (`scale`, default 50 px/m). Write custom WASM only for measured hot paths.

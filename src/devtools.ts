@@ -19,7 +19,8 @@ const REFRESH_MS = 250
 /**
  * Development overlay: fps, main-thread ms per frame, entity, sprite and draw call counts. Click a sprite while the
  * panel is open to inspect its components live. Add it after `webgl2()`. It is DOM, not sprites, so it survives
- * scene changes and never shows up in the counts it measures.
+ * scene changes and never shows up in the counts it measures. It also exposes the game as `ollin.game` in the browser
+ * console, for poking at entities while it runs.
  */
 export const devtools =
   ({ key = 'Backquote', components = {}, open = true }: DevtoolsOptions = {}): Plugin =>
@@ -27,6 +28,7 @@ export const devtools =
     const { canvas, world } = game
     const renderer = game.get(Renderer)
     const camera = game.get(Camera)
+    Object.assign(globalThis, { ollin: { game } })
     const named = Object.entries({ Position, Rotation, Sprite, Animation, ...components })
 
     const panel = document.createElement('pre')

@@ -1,5 +1,5 @@
 import type { System } from './core'
-import { defineComponent, f32, u32, u8, type World } from './ecs'
+import { defineComponent, f32, u32, u8, type Entity, type World } from './ecs'
 
 /** World position. `z` is 2.5D depth today and a real axis for the future 3D plugin. */
 export const Position = defineComponent({ x: f32, y: f32, z: f32 })
@@ -102,4 +102,21 @@ export function burst(world: World, options: BurstOptions) {
       [Particle, { vx: Math.cos(a) * v, vy: Math.sin(a) * v, gravity, life: life * (0.7 + Math.random() * 0.3) }],
     )
   }
+}
+
+/**
+ * Whether two sprites' boxes overlap (centered on `Position`, sized by `Sprite`). `inset` shrinks both boxes by that
+ * many pixels per side, for forgiving hits. Ignores rotation.
+ */
+export function overlaps(a: Entity, b: Entity, inset = 0) {
+  const { x, y } = Position
+  const { w, h } = Sprite
+  return Math.abs(x[a] - x[b]) < (w[a] + w[b]) / 2 - 2 * inset && Math.abs(y[a] - y[b]) < (h[a] + h[b]) / 2 - 2 * inset
+}
+
+/** The first of `others` that overlaps `e` (see `overlaps`), or -1. `hit(player, enemies.entities)` */
+// ponytail: linear scan, fine for one-vs-many; add a spatial grid for many-vs-many (bullets vs crowds)
+export function hit(e: Entity, others: readonly Entity[], inset = 0): Entity {
+  for (const o of others) if (o !== e && overlaps(e, o, inset)) return o
+  return -1
 }
