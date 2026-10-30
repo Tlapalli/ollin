@@ -25,8 +25,8 @@ How each part of Ollin works, with the code to use it. New here? Start with [Get
 ## The game, plugins and resources
 
 ```ts
-import { audio, createGame, devtools, input, webgl2 } from 'ollin'
-import { rapier } from 'ollin/rapier'
+import { audio, createGame, devtools, input, webgl2 } from '@tlapalli/ollin'
+import { rapier } from '@tlapalli/ollin/rapier'
 
 const game = await createGame({ canvas, plugins: [webgl2(), input(), audio(), rapier()] })
 ```
@@ -279,7 +279,7 @@ npm install @dimforge/rapier2d-simd-compat
 ```
 
 ```ts
-import { BodyType, Collider, Physics, rapier, RigidBody, Shape } from 'ollin/rapier'
+import { BodyType, Collider, Physics, rapier, RigidBody, Shape } from '@tlapalli/ollin/rapier'
 
 const game = await createGame({ canvas, plugins: [webgl2(), rapier({ gravity: 25, scale: 32 })] })
 

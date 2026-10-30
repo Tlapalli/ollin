@@ -1,4 +1,4 @@
-import { Animation, defineComponent, every, f32, Input, overlaps, Position, Renderer, spawnText, Sprite, type Scene } from 'ollin'
+import { Animation, defineComponent, every, f32, Input, overlaps, Position, Renderer, spawnText, Sprite, type Scene } from '@tlapalli/ollin'
 import petalUrl from './assets/petal.png'
 import sparkUrl from './assets/spark.png'
 import xoloUrl from './assets/xolo.png'

@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "ollin": "^0.1.0"
+    "@tlapalli/ollin": "0.1.0-alpha.0"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

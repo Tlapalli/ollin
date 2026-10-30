@@ -27,5 +27,5 @@ jobs:
           cd "$RUNNER_TEMP"
           node "$GITHUB_WORKSPACE/create-ollin/index.js" game
           cd game
-          npm install "$RUNNER_TEMP"/ollin-*.tgz
+          npm install "$RUNNER_TEMP"/tlapalli-ollin-*.tgz
           npm run build

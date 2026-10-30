@@ -35,7 +35,7 @@ await game.scene(play)
 game.start()
 ```
 
-`createGame` makes an empty game. Everything else comes from plugins: `webgl2()` draws sprites, `input()` reads the keyboard, mouse, touch and gamepads. Add `audio()` for sound and `rapier()` (from `ollin/rapier`) for physics when you need them.
+`createGame` makes an empty game. Everything else comes from plugins: `webgl2()` draws sprites, `input()` reads the keyboard, mouse, touch and gamepads. Add `audio()` for sound and `rapier()` (from `@tlapalli/ollin/rapier`) for physics when you need them.
 
 `game.scene(play)` runs your scene, and `game.start()` starts the frame loop.
 

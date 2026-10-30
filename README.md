@@ -4,9 +4,11 @@
 
 **Ollin** (Nahuatl: *movement*) is a 2D/2.5D game engine written in TypeScript. In the Mexica calendar, *Nahui Ollin* (4 Movement) is the sign of the Fifth Sun, the era we live in.
 
+> **Alpha:** the API may still change between 0.x releases. See the [changelog](CHANGELOG.md).
+
 - **Performance first:** data lives in SoA `Float32Array`s that go straight to the GPU and can be shared with WASM.
 - **Thin friendly layer:** `createGame`, `spawn`, `query`. The data-oriented core stays exposed for those who need it.
-- **Plugins:** plain `(game) => void` functions. Rendering, input, audio, physics (`ollin/rapier`) and 3D are all optional.
+- **Plugins:** plain `(game) => void` functions. Rendering, input, audio, physics (`@tlapalli/ollin/rapier`) and 3D are all optional.
 - **Batteries that stay out of the way:** typed asset handles (no global string keys), spritesheets, a camera, and Tiled map import (orthogonal and isometric).
 - **Smooth on any screen:** a fixed-rate simulation for physics, drawn interpolated so it doesn't judder on 120 Hz displays.
 - **Scenes with hot reload:** a level is a function; `game.scene(level)` swaps or restarts it, and Vite HMR restarts it in place when you save.
@@ -44,8 +46,8 @@ Then follow [Getting started](docs/getting-started.md), and keep [the guide](doc
 ## Install in an existing project
 
 ```bash
-npm install ollin
-npm install @dimforge/rapier2d-simd-compat   # only if you use ollin/rapier
+npm install @tlapalli/ollin
+npm install @dimforge/rapier2d-simd-compat   # only if you use @tlapalli/ollin/rapier
 ```
 
 Ollin ships ES modules with TypeScript types and expects a bundler such as Vite. Rapier's own type definitions need `"skipLibCheck": true` (the Vite templates set it) or `"lib": ["ESNext", "DOM"]` in your `tsconfig.json`.

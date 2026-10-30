@@ -1,4 +1,4 @@
-import { createGame, devtools, input, webgl2 } from 'ollin'
+import { createGame, devtools, input, webgl2 } from '@tlapalli/ollin'
 import { play } from './game'
 
 const canvas = document.querySelector('canvas')!
