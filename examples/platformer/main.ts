@@ -1,4 +1,4 @@
-import { audio, createGame, devtools, input, webgl2 } from '../../src'
+import { audio, createGame, devtools, input, webgl2, webgpu } from '../../src'
 import { Collider, rapier, RigidBody } from '../../src/rapier'
 import { level } from './level'
 
@@ -7,9 +7,11 @@ const canvas = document.querySelector('canvas')!
 canvas.width = innerWidth * devicePixelRatio
 canvas.height = innerHeight * devicePixelRatio
 
+// ?webgpu runs the same game on the WebGPU backend.
+const renderer = new URLSearchParams(location.search).has('webgpu') ? webgpu : webgl2
 const game = await createGame({
   canvas,
-  plugins: [webgl2({ background: [0.11, 0.09, 0.08, 1] }), input(), rapier({ gravity: 25, scale: 32 }), audio(), devtools({ components: { RigidBody, Collider } })],
+  plugins: [renderer({ background: [0.11, 0.09, 0.08, 1] }), input(), rapier({ gravity: 25, scale: 32 }), audio(), devtools({ components: { RigidBody, Collider } })],
 })
 
 await game.scene(level)

@@ -11,8 +11,12 @@ export type Plugin = (game: Game) => void | Promise<void>
  * for anything else it set up (DOM listeners, timers). See `game.scene`.
  */
 export type Scene = (game: Game) => void | (() => void) | Promise<void | (() => void)>
-/** `fixed` runs at a constant rate (physics, deterministic logic), then `update` and `render` once per frame. */
-export type Stage = 'fixed' | 'update' | 'render'
+/**
+ * `fixed` runs at a constant rate (game logic that must not depend on frame rate, moving kinematic bodies), then
+ * `physics` on the same tick (physics plugins step there, after the game's fixed logic), then `update` and `render`
+ * once per frame.
+ */
+export type Stage = 'fixed' | 'physics' | 'update' | 'render'
 
 export interface GameOptions {
   canvas: HTMLCanvasElement
@@ -27,6 +31,11 @@ export interface Game {
   readonly canvas: HTMLCanvasElement
   readonly world: World
   readonly fixedDt: number
+  /**
+   * How far the frame is between the last fixed tick and the next, 0–1. The renderer uses it to draw `Interpolate`
+   * entities between their last two fixed-tick transforms, so physics looks smooth on 120 Hz screens.
+   */
+  readonly fixedAlpha: number
   set<T>(key: Token<T>, value: T): void
   get<T>(key: Token<T>): T
   /** Registers a system; returns a function that removes it (tweens and timers remove themselves when done). */
@@ -45,12 +54,11 @@ export interface Game {
 }
 
 // Caps catch-up after a stall (tab in background, breakpoint) to a few fixed steps instead of a spiral of death.
-// ponytail: no render interpolation between fixed steps; add it if motion judders on high-refresh displays
 const MAX_DT = 0.1
 
 export async function createGame({ canvas, plugins = [], capacity, fixedDt = 1 / 60 }: GameOptions): Promise<Game> {
   const resources = new Map<symbol, unknown>()
-  const stages: Record<Stage, System[]> = { fixed: [], update: [], render: [] }
+  const stages: Record<Stage, System[]> = { fixed: [], physics: [], update: [], render: [] }
   let accumulator = 0
   let frame = 0
   let last = 0
@@ -62,6 +70,7 @@ export async function createGame({ canvas, plugins = [], capacity, fixedDt = 1 /
     canvas,
     world: new World(capacity),
     fixedDt,
+    fixedAlpha: 0,
     set: (key, value) => void resources.set(key, value),
     get(key) {
       if (!resources.has(key)) throw new Error(`Resource not registered: ${key.description}`)
@@ -93,8 +102,10 @@ export async function createGame({ canvas, plugins = [], capacity, fixedDt = 1 /
       accumulator += dt
       while (accumulator >= fixedDt) {
         for (const fn of stages.fixed) fn(fixedDt)
+        for (const fn of stages.physics) fn(fixedDt)
         accumulator -= fixedDt
       }
+      ;(game as { fixedAlpha: number }).fixedAlpha = accumulator / fixedDt
       for (const fn of stages.update) fn(dt)
       for (const fn of stages.render) fn(dt)
     },

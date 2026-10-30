@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Position } from './components'
+import { Interpolate, Position } from './components'
 import { createGame } from './core'
 import { BodyType, Collider, Physics, rapier, RigidBody, Shape } from './rapier'
 
@@ -39,5 +39,24 @@ describe('rapier plugin', () => {
     game.step(game.fixedDt)
     expect(physics.body(again)).toBeDefined()
     expect(physics.world.bodies.len()).toBe(2)
+  })
+
+  it('moves kinematic bodies from Position in the same tick and lets them carry dynamic ones', async () => {
+    const game = await createGame({ canvas: {} as HTMLCanvasElement, plugins: [rapier({ gravity: 10, scale: 100 })] })
+    const { world } = game
+    const platform = world.spawn(
+      [Position, { x: 0, y: 500 }],
+      [RigidBody, { type: BodyType.Kinematic }],
+      [Collider, { shape: Shape.Box, w: 600, h: 40, friction: 1 }],
+    )
+    const box = world.spawn([Position, { x: 0, y: 440 }], [RigidBody], [Collider, { shape: Shape.Box, w: 40, h: 40, friction: 1 }])
+    for (let i = 0; i < 60; i++) game.step(game.fixedDt) // settle
+    const start = Position.x[box]
+    // The game moves the platform in `fixed`; the physics step in the same tick follows it.
+    game.system(() => (Position.x[platform] += 2), 'fixed')
+    for (let i = 0; i < 60; i++) game.step(game.fixedDt)
+    expect(game.get(Physics).body(platform)!.translation().x * 100).toBeCloseTo(Position.x[platform], 3)
+    expect(Position.x[box] - start).toBeGreaterThan(100) // carried along by friction (platform moved 120 px)
+    expect(world.has(box, Interpolate) && world.has(platform, Interpolate)).toBe(true)
   })
 })

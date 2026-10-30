@@ -2,7 +2,6 @@ import {
   after,
   Animation,
   Audio,
-  burst,
   Camera,
   defineComponent,
   ease,
@@ -238,7 +237,7 @@ export const level =
       const { x, y } = Position
       const petal = hit(player, petals, 1)
       if (petal >= 0) {
-        burst(world, { x: x[petal], y: y[petal], z: ACTORS, texture: textures.spark, tint: 0xf28c28, size: 3, count: 12, speed: 60, life: 0.5 })
+        game.get(Renderer).burst({ x: x[petal], y: y[petal], z: ACTORS, texture: textures.spark, tint: 0xf28c28, size: 3, count: 12, speed: 60, life: 0.5 })
         world.despawn(petal)
         petals.splice(petals.indexOf(petal), 1)
         collected++
@@ -262,7 +261,7 @@ export const level =
       run.lives--
       showLives()
       sound.play(sounds.hurt)
-      burst(world, { x: x[player], y: y[player], z: ACTORS, texture: textures.spark, tint: 0xb5302a, size: 3, count: 16, speed: 80, life: 0.6 })
+      game.get(Renderer).burst({ x: x[player], y: y[player], z: ACTORS, texture: textures.spark, tint: 0xb5302a, size: 3, count: 16, speed: 80, life: 0.6 })
       if (run.lives <= 0) {
         over = true
         tween(game, player, Sprite, { alpha: 0 }, { duration: 0.8, onDone: () => void game.scene(end(false, run)) })
@@ -291,7 +290,7 @@ export const end =
     blink(game, text('press space or tap to play again', { x: W / 2, y: 228, size: 11, tint: 0x1f9e9a }))
     if (won) {
       every(game, 0.35, () =>
-        burst(game.world, {
+        game.get(Renderer).burst({
           x: 40 + Math.random() * (W - 80),
           y: 40 + Math.random() * 120,
           z: ACTORS,

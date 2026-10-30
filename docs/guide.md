@@ -86,11 +86,23 @@ Built-in components: `Position` (`x`, `y`, `z`), `Rotation` (`angle`, radians), 
 
 ```ts
 game.system((dt) => { /* every frame */ })            // 'update' stage
-game.system((dt) => { /* fixed rate */ }, 'fixed')    // physics, deterministic logic
+game.system((dt) => { /* fixed rate */ }, 'fixed')    // logic that must not depend on frame rate
 const stop = game.system(fn)                          // returns a function that removes it
 ```
 
-Each frame runs `fixed` systems as many times as needed to keep a steady rate (`game.fixedDt`, 1/60 s by default), then `update` and `render` once. Put physics and anything that must behave the same at any frame rate in `fixed`; everything else goes in `update`.
+The game runs in fixed **ticks**, as many per frame as needed to keep a steady rate (`game.fixedDt`, 1/60 s by default). Each tick runs the `fixed` systems, then the `physics` stage, where physics plugins step. Then `update` and `render` run once per frame.
+
+Put anything that must behave the same at any frame rate in `fixed`: forces, moving platforms, deterministic logic. Everything else goes in `update`.
+
+**Smooth motion.** Things that move only in fixed ticks advance at 60 Hz, which looks jerky on 120 Hz screens. Give them `Interpolate` and the renderer draws them between their last two ticks:
+
+```ts
+world.spawn([Position], [Sprite, { w: 16, h: 16, texture }], [Interpolate])
+const { x, y } = drawnPosition(game, e) // where it is drawn this frame: follow this with the camera
+Interpolate.ready[e] = 0                // after teleporting, so it jumps instead of sliding there
+```
+
+Rapier bodies get `Interpolate` automatically. Don't add it to things you move in `update`.
 
 ## Scenes
 
@@ -240,10 +252,13 @@ const stop = every(game, 0.5, () => spawnPetal())         // repeatedly
 ## Particles
 
 ```ts
-burst(world, { x, y, z: 2, texture: textures.spark, tint: 0xf28c28, count: 16, speed: 200, spread: Math.PI * 2, life: 0.6, gravity: 300, size: 6 })
+renderer.burst({ x, y, z: 2, texture: textures.spark, tint: 0xf28c28, count: 16, speed: 200, spread: Math.PI * 2, life: 0.6, gravity: 300, size: 6 })
 ```
 
-Each particle is a sprite that moves, falls, fades out and despawns by itself. Use small white textures so `tint` gives them any color.
+- Particles move, fall and fade out on the GPU. After a burst the CPU does nothing for them, so thousands cost about the same as a few.
+- They are not entities: you can't query or collide with them.
+- They draw after the sprites of their `z` layer and keep flying through scene changes until they fade.
+- Use small white textures so `tint` gives them any color.
 
 ## Collisions
 
@@ -275,7 +290,15 @@ world.spawn(
 )
 ```
 
-- Bodies are created on the next fixed step. From then on Rapier moves them and writes the result back to `Position` and `Rotation`.
+- Bodies are created on the next fixed tick. From then on Rapier moves dynamic bodies and writes the result back to `Position` and `Rotation`.
+- `BodyType.Kinematic` bodies go the other way: you move them, physics follows, and they push and carry dynamic bodies. Use them for moving platforms, doors and elevators. Move them in a `fixed` system, so physics sees the move in the same tick:
+
+  ```ts
+  const platform = world.spawn([Position, { x: 400, y: 300 }], [Sprite, { w: 96, h: 16, texture }], [RigidBody, { type: BodyType.Kinematic }], [Collider, { shape: Shape.Box, w: 96, h: 16 }])
+  let clock = 0
+  game.system((dt) => void (Position.x[platform] = 400 + Math.sin((clock += dt)) * 100), 'fixed')
+  ```
+- Moving bodies are interpolated automatically (see [Systems and stages](#systems-and-stages)). Make the camera follow `drawnPosition(game, player)`.
 - Collider sizes are in pixels. `scale` is pixels per meter (Rapier works best with objects of 0.1–10 m), and `gravity` is in m/s².
 - For everything else (impulses, velocities, raycasts, joints), use `game.get(Physics)`: `physics.body(e)` is the entity's Rapier body, `physics.world` is the Rapier world, and `physics.rapier` is the Rapier module.
 - Rapier's type definitions need `"skipLibCheck": true` in `tsconfig.json`, which the Vite templates and `create-ollin` already set.

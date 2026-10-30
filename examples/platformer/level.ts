@@ -1,4 +1,4 @@
-import { Animation, Audio, burst, Camera, ease, Input, loadTilemap, mixColor, Position, Renderer, Rotation, Sprite, spawnText, tween, type Scene } from '../../src'
+import { Animation, Audio, Camera, drawnPosition, ease, Input, loadTilemap, mixColor, Position, Renderer, Rotation, Sprite, spawnText, tween, type Scene } from '../../src'
 import { BodyType, Collider, Physics, RigidBody, Shape } from '../../src/rapier'
 
 // The level is a scene: everything it spawns and every system it registers goes away when the scene changes
@@ -27,6 +27,23 @@ export const level: Scene = async (game) => {
     world.add(e, RigidBody, { type: BodyType.Fixed })
     world.add(e, Collider, { shape: Shape.Box, w: map.tileWidth, h: map.tileHeight })
   }
+
+  // A moving platform: three kinematic tiles the level moves in `fixed`; physics carries the ball along.
+  const tile = map.layers.ground.find((e) => Sprite.frame[e] === 2)!
+  const shuttle = [-1, 0, 1].map((i) =>
+    world.spawn(
+      [Position, { x: 660 + i * map.tileWidth, y: 10 * map.tileHeight + map.tileHeight / 2, z: Position.z[tile] }],
+      [Sprite, { w: map.tileWidth, h: map.tileHeight, texture: Sprite.texture[tile], frame: 2 }],
+      [RigidBody, { type: BodyType.Kinematic }],
+      [Collider, { shape: Shape.Box, w: map.tileWidth, h: map.tileHeight, friction: 1 }],
+    ),
+  )
+  let clock = 0
+  game.system((dt) => {
+    clock += dt
+    const center = 660 + Math.sin(clock * 0.7) * 180
+    shuttle.forEach((e, i) => (Position.x[e] = center + (i - 1) * map.tileWidth))
+  }, 'fixed')
 
   const start = map.objects.find((o) => o.name === 'player')!
   const SIZE = 28
@@ -96,7 +113,7 @@ export const level: Scene = async (game) => {
     for (let i = seeds.length - 1; i >= 0; i--) {
       const seed = seeds[i]
       if (Math.hypot(x[seed] - x[player], y[seed] - y[player]) > SIZE) continue
-      burst(world, { x: x[seed], y: y[seed], z: Position.z[seed], texture: textures.spark, tint: 0xf2c14e, size: 6, count: 14, speed: 160, gravity: 300, life: 0.5 })
+      renderer.burst({ x: x[seed], y: y[seed], z: Position.z[seed], texture: textures.spark, tint: 0xf2c14e, size: 6, count: 14, speed: 160, gravity: 300, life: 0.5 })
       world.despawn(seed)
       seeds.splice(i, 1)
       collected++
@@ -113,7 +130,7 @@ export const level: Scene = async (game) => {
   game.system((dt) => {
     camera.zoom = canvas.height / map.height
     const half = camera.width / 2 / camera.zoom
-    const target = Math.min(Math.max(Position.x[player], half), map.width - half)
+    const target = Math.min(Math.max(drawnPosition(game, player).x, half), map.width - half)
     camera.x += (target - camera.x) * Math.min(1, dt * 6)
     camera.y = map.height / 2
   })

@@ -81,6 +81,17 @@ describe('World', () => {
 })
 
 describe('createGame', () => {
+  it('runs fixed then physics on every tick, and reports how far the frame is into the next tick', async () => {
+    const log: string[] = []
+    const game = await createGame({ canvas: {} as HTMLCanvasElement, fixedDt: 0.1 })
+    game.system(() => void log.push('physics'), 'physics')
+    game.system(() => void log.push('fixed'), 'fixed')
+    game.system(() => void log.push('update'))
+    game.step(0.25)
+    expect(log).toEqual(['fixed', 'physics', 'fixed', 'physics', 'update'])
+    expect(game.fixedAlpha).toBeCloseTo(0.5)
+  })
+
   it('runs plugins, resources and systems in update → render order', async () => {
     const Log = token<string[]>('Log')
     const game = await createGame({

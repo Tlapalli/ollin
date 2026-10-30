@@ -1,4 +1,4 @@
-import { Animation, burst, defineComponent, every, f32, Input, overlaps, Position, Renderer, spawnText, Sprite, type Scene } from 'ollin'
+import { Animation, defineComponent, every, f32, Input, overlaps, Position, Renderer, spawnText, Sprite, type Scene } from 'ollin'
 import petalUrl from './assets/petal.png'
 import sparkUrl from './assets/spark.png'
 import xoloUrl from './assets/xolo.png'
@@ -73,7 +73,7 @@ export const play: Scene = async (game) => {
       const petal = petals.entities[i]
       Position.y[petal] += Fall.speed[petal] * dt
       if (overlaps(xolo, petal, S)) {
-        burst(world, { x: Position.x[petal], y: Position.y[petal], texture: textures.spark, tint: 0xf28c28, size: 2 * S, speed: 40 * S })
+        renderer.burst({ x: Position.x[petal], y: Position.y[petal], texture: textures.spark, tint: 0xf28c28, size: 2 * S, speed: 40 * S })
         world.despawn(petal)
         caught++
         showScore()

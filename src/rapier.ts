@@ -1,15 +1,20 @@
 import RAPIER from '@dimforge/rapier2d-simd-compat'
-import { Position, Rotation } from './components'
+import { Interpolate, Position, Rotation } from './components'
 import { token, type Plugin } from './core'
 import { defineComponent, f32, u8, type Entity } from './ecs'
 
-export const BodyType = { Dynamic: 0, Fixed: 1 } as const
+/**
+ * `Dynamic` bodies are moved by physics. `Fixed` ones never move. `Kinematic` ones are moved by the game: set their
+ * `Position` (and `Rotation`) in a `fixed` system and physics follows, pushing and carrying dynamic bodies
+ * (moving platforms, doors, elevators).
+ */
+export const BodyType = { Dynamic: 0, Fixed: 1, Kinematic: 2 } as const
 export const Shape = { Box: 0, Ball: 1 } as const
 
 /**
- * Physics body for an entity with `Position` + `Collider`. The body is created on the next fixed step;
- * after that Rapier owns the transform and writes it back to `Position` (and `Rotation`, if present).
- * ponytail: dynamic and fixed bodies only; add kinematic bodies (ECS → Rapier sync) for moving platforms
+ * Physics body for an entity with `Position` + `Collider`. The body is created on the next fixed tick. After that,
+ * a dynamic body's transform belongs to Rapier, which writes it back to `Position` (and `Rotation`, if present);
+ * a kinematic body follows `Position`. Moving bodies get `Interpolate`, so they look smooth on any refresh rate.
  */
 export const RigidBody = defineComponent({ type: u8, created: u8 })
 
@@ -45,7 +50,9 @@ export const rapier = ({ gravity = 9.81, scale = 50 }: RapierOptions = {}): Plug
     const pending = game.world.query(Position, RigidBody, Collider)
 
     const create = (e: Entity) => {
-      const desc = RigidBody.type[e] === BodyType.Fixed ? RAPIER.RigidBodyDesc.fixed() : RAPIER.RigidBodyDesc.dynamic()
+      const type = RigidBody.type[e]
+      const desc =
+        type === BodyType.Fixed ? RAPIER.RigidBodyDesc.fixed() : type === BodyType.Kinematic ? RAPIER.RigidBodyDesc.kinematicPositionBased() : RAPIER.RigidBodyDesc.dynamic()
       desc.setTranslation(Position.x[e] / scale, Position.y[e] / scale)
       if (game.world.has(e, Rotation)) desc.setRotation(Rotation.angle[e])
       const body = physics.createRigidBody(desc)
@@ -60,6 +67,7 @@ export const rapier = ({ gravity = 9.81, scale = 50 }: RapierOptions = {}): Plug
 
       RigidBody.created[e] = 1
       bodies.set(e, body)
+      if (type !== BodyType.Fixed && !game.world.has(e, Interpolate)) game.world.add(e, Interpolate)
     }
 
     const destroy = (e: Entity) => {
@@ -74,10 +82,16 @@ export const rapier = ({ gravity = 9.81, scale = 50 }: RapierOptions = {}): Plug
       for (const e of bodies.keys()) if (!game.world.has(e, RigidBody) || !RigidBody.created[e]) destroy(e)
       for (const e of pending.entities) if (!RigidBody.created[e]) create(e)
 
-      physics.step()
-
       const { x, y } = Position
       const { angle } = Rotation
+      for (const [e, body] of bodies) {
+        if (!body.isKinematic()) continue
+        body.setNextKinematicTranslation({ x: x[e] / scale, y: y[e] / scale })
+        if (game.world.has(e, Rotation)) body.setNextKinematicRotation(angle[e])
+      }
+
+      physics.step()
+
       for (const [e, body] of bodies) {
         if (!body.isDynamic() || body.isSleeping()) continue
         const t = body.translation()
@@ -85,5 +99,5 @@ export const rapier = ({ gravity = 9.81, scale = 50 }: RapierOptions = {}): Plug
         y[e] = t.y * scale
         if (game.world.has(e, Rotation)) angle[e] = body.rotation()
       }
-    }, 'fixed')
+    }, 'physics')
   }

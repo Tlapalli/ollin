@@ -1,5 +1,5 @@
 import type { Plugin } from './core'
-import { createRenderer, FLOATS_PER_SPRITE, type Backend, type RendererOptions } from './render'
+import { createRenderer, FLOATS_PER_PARTICLE, FLOATS_PER_SPRITE, type Backend, type RendererOptions } from './render'
 import { webgl2 } from './webgl2'
 
 // GPUBufferUsage / GPUTextureUsage flags from the spec; TypeScript's DOM lib has the WebGPU types but not these globals.
@@ -12,9 +12,12 @@ const BUFFER_UNIFORM = 0x40
 const TEXTURE_COPY_DST = 0x2
 const TEXTURE_BINDING = 0x4
 const TEXTURE_RENDER_ATTACHMENT = 0x10
+const STAGE_VERTEX = 0x1
+const STAGE_FRAGMENT = 0x2
 
 const SHADER = /* wgsl */ `
-@group(0) @binding(0) var<uniform> viewProj: mat4x4f;
+struct Frame { viewProj: mat4x4f, time: f32 }
+@group(0) @binding(0) var<uniform> frame: Frame;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
 
@@ -41,11 +44,37 @@ struct Fragment {
   let n = sin(s.angle);
   let world = s.position.xy + vec2f(local.x * c - local.y * n, local.x * n + local.y * c);
   var out: Fragment;
-  out.position = viewProj * vec4f(world, s.position.z, 1.0);
+  out.position = frame.viewProj * vec4f(world, s.position.z, 1.0);
   // The shared ortho matrix targets WebGL's -1..1 depth range; WebGPU clips to 0..1.
   out.position.z = out.position.z * 0.5 + 0.5;
   out.uv = s.uv.xy + corner * s.uv.zw;
   out.tint = s.tint;
+  return out;
+}
+
+struct Particle {
+  @builtin(vertex_index) vertex: u32,
+  @location(0) motion: vec4f, // x, y, vx, vy
+  @location(1) life: vec4f,   // gravity, birth, life, size
+  @location(2) uv: vec4f,
+  @location(3) tint: vec4f,
+}
+
+// Particles move and fade here from their birth data, so the CPU never touches them after a burst.
+@vertex fn particle(p: Particle) -> Fragment {
+  var out: Fragment;
+  let age = frame.time - p.life.y;
+  let k = age / p.life.z;
+  if (age < 0.0 || k >= 1.0) {
+    out.position = vec4f(2.0, 2.0, 2.0, 1.0); // dead or unborn: clipped away
+    return out;
+  }
+  let corner = vec2f(f32(p.vertex & 1u), f32(p.vertex >> 1u));
+  let at = p.motion.xy + p.motion.zw * age + vec2f(0.0, 0.5 * p.life.x * age * age);
+  out.position = frame.viewProj * vec4f(at + (corner - 0.5) * p.life.w, 0.0, 1.0);
+  out.position.z = out.position.z * 0.5 + 0.5;
+  out.uv = p.uv.xy + corner * p.uv.zw;
+  out.tint = vec4f(p.tint.rgb, p.tint.a * (1.0 - k));
   return out;
 }
 
@@ -68,7 +97,7 @@ export const webgpu =
     createRenderer(game, webgpuBackend(game.canvas, device, options.background ?? [0.1, 0.1, 0.1, 1]))
   }
 
-function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background: [number, number, number, number]): Backend<GPUBindGroup> {
+function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background: [number, number, number, number]): Backend<GPUBindGroup, GPUBuffer> {
   const context = canvas.getContext('webgpu') as GPUCanvasContext | null
   if (!context) throw new Error('WebGPU canvas context is not available')
   const format = navigator.gpu.getPreferredCanvasFormat()
@@ -76,8 +105,18 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
 
   const module = device.createShaderModule({ code: SHADER })
   const blend: GPUBlendComponent = { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }
+  // Explicit layouts, so sprites and particles share the projection and texture bind groups.
+  const frameLayout = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: STAGE_VERTEX, buffer: {} }] })
+  const textureLayout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: STAGE_FRAGMENT, texture: {} },
+      { binding: 1, visibility: STAGE_FRAGMENT, sampler: {} },
+    ],
+  })
+  const layout = device.createPipelineLayout({ bindGroupLayouts: [frameLayout, textureLayout] })
+  const fragment: GPUFragmentState = { module, entryPoint: 'fs', targets: [{ format, blend: { color: blend, alpha: blend } }] }
   const pipeline = device.createRenderPipeline({
-    layout: 'auto',
+    layout,
     vertex: {
       module,
       entryPoint: 'vs',
@@ -95,14 +134,34 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
         },
       ],
     },
-    fragment: { module, entryPoint: 'fs', targets: [{ format, blend: { color: blend, alpha: blend } }] },
+    fragment,
+    primitive: { topology: 'triangle-strip' },
+  })
+  const particlePipeline = device.createRenderPipeline({
+    layout,
+    vertex: {
+      module,
+      entryPoint: 'particle',
+      buffers: [
+        {
+          arrayStride: FLOATS_PER_PARTICLE * 4,
+          stepMode: 'instance',
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x4' },
+            { shaderLocation: 1, offset: 16, format: 'float32x4' },
+            { shaderLocation: 2, offset: 32, format: 'float32x4' },
+            { shaderLocation: 3, offset: 48, format: 'unorm8x4' },
+          ],
+        },
+      ],
+    },
+    fragment,
     primitive: { topology: 'triangle-strip' },
   })
 
-  // Both projections live in one uniform buffer; bind group offsets must be 256-byte aligned.
+  // Both projections (each with the particle clock) live in one uniform buffer; bind group offsets must be 256-byte aligned.
   const uniforms = device.createBuffer({ size: 512, usage: BUFFER_UNIFORM | BUFFER_COPY_DST })
-  const projection = (offset: number) =>
-    device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: uniforms, offset, size: 64 } }] })
+  const projection = (offset: number) => device.createBindGroup({ layout: frameLayout, entries: [{ binding: 0, resource: { buffer: uniforms, offset, size: 80 } }] })
   const viewGroup = projection(0)
   const screenGroup = projection(256)
   const samplers = {
@@ -117,7 +176,8 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
   let used = 0
   let instances: GPUBuffer | undefined
   const pool: GPUBuffer[] = []
-  const draws: { first: number; count: number; texture: GPUBindGroup; screen: boolean }[] = []
+  /** Sprite draws index `instances`; particle draws carry their pool's buffer. */
+  const draws: { particles?: GPUBuffer; first: number; count: number; texture: GPUBindGroup; screen: boolean }[] = []
 
   return {
     name: 'webgpu',
@@ -130,16 +190,19 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
       })
       device.queue.copyExternalImageToTexture({ source: img }, { texture, premultipliedAlpha: true }, size)
       return device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(1),
+        layout: textureLayout,
         entries: [
           { binding: 0, resource: texture.createView() },
           { binding: 1, resource: samplers[filter] },
         ],
       })
     },
-    begin(_width, _height, view, screen) {
+    begin(_width, _height, view, screen, time) {
+      const clock = new Float32Array([time])
       device.queue.writeBuffer(uniforms, 0, view)
+      device.queue.writeBuffer(uniforms, 64, clock)
       device.queue.writeBuffer(uniforms, 256, screen)
+      device.queue.writeBuffer(uniforms, 320, clock)
     },
     draw(data, count, texture, screen) {
       const n = count * FLOATS_PER_SPRITE
@@ -151,6 +214,15 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
       frame.set(data.subarray(0, n), used)
       draws.push({ first: used / FLOATS_PER_SPRITE, count, texture, screen })
       used += n
+    },
+    createParticles(max) {
+      return device.createBuffer({ size: max * FLOATS_PER_PARTICLE * 4, usage: BUFFER_VERTEX | BUFFER_COPY_DST })
+    },
+    writeParticles(buffer, first, data) {
+      device.queue.writeBuffer(buffer, first * FLOATS_PER_PARTICLE * 4, data)
+    },
+    drawParticles(buffer, count, texture, screen) {
+      draws.push({ particles: buffer, first: 0, count, texture, screen })
     },
     end() {
       const bytes = used * 4
@@ -171,10 +243,14 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
       const pass = encoder.beginRenderPass({
         colorAttachments: [{ view: context.getCurrentTexture().createView(), clearValue: background, loadOp: 'clear', storeOp: 'store' }],
       })
-      pass.setPipeline(pipeline)
-      if (instances) pass.setVertexBuffer(0, instances)
+      let vertices: GPUBuffer | undefined
       let bound: boolean | undefined
       for (const d of draws) {
+        const buffer = d.particles ?? instances!
+        if (buffer !== vertices) {
+          pass.setPipeline(d.particles ? particlePipeline : pipeline)
+          pass.setVertexBuffer(0, (vertices = buffer))
+        }
         if (d.screen !== bound) pass.setBindGroup(0, (bound = d.screen) ? screenGroup : viewGroup)
         pass.setBindGroup(1, d.texture)
         pass.draw(4, d.count, 0, d.first)

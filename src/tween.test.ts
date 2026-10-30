@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { burst, Particle, particles, Position, Sprite } from './components'
+import { Position } from './components'
 import { createGame } from './core'
 import { after, ease, every, mixColor, tween } from './tween'
 
@@ -48,23 +48,6 @@ test('after fires once, every repeats, both end with the scene', async () => {
   await game.scene(() => {})
   game.step(5)
   expect(log.length).toBe(4)
-})
-
-test('particles move, fade and despawn', async () => {
-  const game = await newGame()
-  const { world } = game
-  game.system(particles(world))
-  burst(world, { x: 0, y: 0, texture: 0, count: 5, speed: 100, life: 1, gravity: 50 })
-  const live = world.query(Particle)
-  expect(live.entities.length).toBe(5)
-  game.step(0.3)
-  for (const e of live.entities) {
-    expect(Math.hypot(Position.x[e], Position.y[e])).toBeGreaterThan(0)
-    expect(Sprite.alpha[e]).toBeLessThan(1)
-  }
-  game.step(0.8)
-  expect(live.entities.length).toBe(0)
-  expect(world.count).toBe(0)
 })
 
 test('mixColor blends channels', () => {
