@@ -32,7 +32,15 @@ game.system((dt) => {
 game.start()
 ```
 
-## Install
+## Start
+
+```bash
+npm create ollin@latest my-game   # a Vite project with a small game to change
+```
+
+Then follow [Getting started](docs/getting-started.md), and keep [the guide](docs/guide.md) at hand for everything else.
+
+## Install in an existing project
 
 ```bash
 npm install ollin

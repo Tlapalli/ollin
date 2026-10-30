@@ -20,3 +20,12 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm pack --dry-run
+      # The create-ollin template must build against the package as published.
+      - name: Build the create-ollin template
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP"
+          node "$GITHUB_WORKSPACE/create-ollin/index.js" game
+          cd game
+          npm install "$RUNNER_TEMP"/ollin-*.tgz
+          npm run build

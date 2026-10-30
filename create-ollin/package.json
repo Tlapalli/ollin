@@ -1,0 +1,19 @@
+{
+  "name": "create-ollin",
+  "version": "0.1.0",
+  "description": "Start an Ollin game: npm create ollin@latest my-game",
+  "keywords": ["ollin", "game", "template", "vite"],
+  "license": "MIT",
+  "author": "Diego Resendez",
+  "type": "module",
+  "bin": {
+    "create-ollin": "index.js"
+  },
+  "files": [
+    "index.js",
+    "template"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

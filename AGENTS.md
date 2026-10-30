@@ -13,6 +13,11 @@ npm run build      # dist/: Vite library build (JS) + tsc declarations
 
 Run `npm test` and `npm run typecheck` before calling a change done. For rendering or physics changes, also run the examples in a browser. For renderer or ECS hot-path changes, compare `examples/bench` (`ollin.html` vs `phaser.html` and `phaser-gpu.html?mode=cpu`, `?count=N`) before and after: it reports main-thread ms per frame. Measure with vsync on; with vsync off, GL backpressure shows up as work.
 
+## Docs and template
+
+- `docs/getting-started.md` (tutorial over the template) and `docs/guide.md` (every feature with code) are user-facing. When a public API changes, update the guide in the same change, and check the snippets against the code.
+- `create-ollin/` is the `npm create ollin` package (published on its own, not part of `ollin`). Its template depends on the published `ollin` version; CI packs `ollin` and builds the template against it, so template code must keep compiling with the current API. `npm test` covers the scaffolder.
+
 ## Conventions
 
 - **English only** for code, comments, identifiers, error messages, tests, commits and repository docs.
@@ -62,5 +67,6 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 12. Dogfooding game `examples/xolo`, `input.pressed`, `overlaps`/`hit` (done).
 13. Stale component arrays fail visibly, default capacity 16k (done).
 14. Unicode text (accents, ñ, Nahuatl macrons, `chars`), `text.tint`/`text.alpha` (done).
+15. Docs and `create-ollin` template (done).
 
 Out of scope for now: editor, networking, Canvas2D renderer.
