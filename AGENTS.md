@@ -15,7 +15,7 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 
 ## Docs and template
 
-- `docs/getting-started.md` (tutorial over the template) and `docs/guide.md` (every feature with code) are user-facing. When a public API changes, update the guide in the same change, and check the snippets against the code.
+- User docs (Getting started and the Guide) live in the site repo, `github.com/Tlapalli/ollin-site` (`src/content/docs/`), published at https://tlapalli.github.io/ollin-site/. When a public API changes, update the guide there for the same release and check its snippets against the code. Its landing demo is a copy of the template game (`src/demo/game.ts`); update it when the template changes.
 - `create-ollin/` is the `npm create ollin` package (published on its own, not part of `ollin`). Its template depends on the published `ollin` version; CI packs `ollin` and builds the template against it, so template code must keep compiling with the current API. `npm test` covers the scaffolder.
 
 ## Conventions

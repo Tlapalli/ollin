@@ -4,6 +4,8 @@
 
 **Ollin** (Nahuatl: *movement*) is a 2D/2.5D game engine written in TypeScript. In the Mexica calendar, *Nahui Ollin* (4 Movement) is the sign of the Fifth Sun, the era we live in.
 
+**Website and docs:** https://tlapalli.github.io/ollin-site/ (with a live demo)
+
 > **Alpha:** the API may still change between 0.x releases. See the [changelog](CHANGELOG.md).
 
 - **Performance first:** data lives in SoA `Float32Array`s that go straight to the GPU and can be shared with WASM.
@@ -41,7 +43,7 @@ game.start()
 npm create ollin@latest my-game   # a Vite project with a small game to change
 ```
 
-Then follow [Getting started](docs/getting-started.md), and keep [the guide](docs/guide.md) at hand for everything else.
+Then follow [Getting started](https://tlapalli.github.io/ollin-site/getting-started/), and keep [the guide](https://tlapalli.github.io/ollin-site/guide/) at hand for everything else.
 
 ## Install in an existing project
 
