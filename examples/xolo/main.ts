@@ -1,7 +1,7 @@
 import { audio, createGame, devtools, input, webgl2 } from '../../src'
 import { menu } from './scenes'
 
-// Xolo: a xoloitzcuintli, the dog that guides souls through Mictlan, gathers cempasuchil petals while obsidian
+// Xolo: a xoloitzcuintli, the dog that guides souls through Mictlan, gathers cempasúchil petals while obsidian
 // spirits drift around. Arrows / WASD, a gamepad, or hold a finger (or the mouse) where you want to go.
 const canvas = document.querySelector('canvas')!
 canvas.width = innerWidth * devicePixelRatio

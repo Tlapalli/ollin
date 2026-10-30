@@ -15,7 +15,7 @@ const keys = game.get(Input).keys
 const [map, textures, font] = await Promise.all([
   loadTilemap(game, new URL('./map.tmj', import.meta.url).href),
   renderer.loadTextures({ walker: [new URL('./walker.png', import.meta.url).href, { frameWidth: 32, frameHeight: 48 }] }),
-  renderer.loadFont({ family: 'ui-monospace, monospace', size: 32, weight: 'bold' }),
+  renderer.loadFont({ family: 'ui-monospace, monospace', size: 32, weight: 'bold', chars: '←↑→↓' }),
 ])
 
 // The walker joins the blocks layer, and that layer draws in order of each sprite's bottom edge.
@@ -44,7 +44,7 @@ const walker = world.spawn(
 
 const HUD = 100
 renderer.screen.add(HUD)
-spawnText(world, font, 'arrows / WASD to walk', { x: 16 * devicePixelRatio, y: 12 * devicePixelRatio, z: HUD, size: 16 * devicePixelRatio, tint: 0xf3e6c9 })
+spawnText(world, font, '←↑→↓ or WASD to walk', { x: 16 * devicePixelRatio, y: 12 * devicePixelRatio, z: HUD, size: 16 * devicePixelRatio, tint: 0xf3e6c9 })
 
 camera.zoom = Math.min(canvas.width / map.width, canvas.height / map.height) * 0.9
 camera.x = map.width / 2

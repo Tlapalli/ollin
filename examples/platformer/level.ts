@@ -19,7 +19,7 @@ export const level: Scene = async (game) => {
       spark: new URL('./spark.png', import.meta.url).href,
     }),
     sound.load({ jump: new URL('./jump.wav', import.meta.url).href }),
-    renderer.loadFont({ family: 'ui-monospace, monospace', size: 32, weight: 'bold' }),
+    renderer.loadFont({ family: 'ui-monospace, monospace', size: 32, weight: 'bold', chars: '←→↑' }),
   ])
 
   // ponytail: one fixed collider per tile; merge rows into strips if tile counts or seam bumps become a problem
@@ -49,7 +49,7 @@ export const level: Scene = async (game) => {
   const HUD = 100
   renderer.screen.add(HUD)
   const scale = devicePixelRatio
-  spawnText(world, font, 'arrows roll - space jump - gamepad and touch too', { x: 16 * scale, y: 12 * scale, z: HUD, size: 14 * scale, tint: 0xf3e6c9, alpha: 0.8 })
+  spawnText(world, font, '← → roll · ↑ or space jump · gamepad and touch too', { x: 16 * scale, y: 12 * scale, z: HUD, size: 14 * scale, tint: 0xf3e6c9, alpha: 0.8 })
   const score = spawnText(world, font, '', { x: canvas.width - 16 * scale, y: 12 * scale, z: HUD, size: 20 * scale, tint: 0x1f9e9a, align: 'right' })
   const showScore = () => score.set(collected === total ? `all ${total} seeds!` : `seeds ${collected}/${total}`)
   showScore()

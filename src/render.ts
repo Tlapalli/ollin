@@ -2,7 +2,7 @@ import { Camera, createCamera } from './camera'
 import { animation, particles, Position, Rotation, Sprite } from './components'
 import { token, type Game } from './core'
 import { mat4, ortho } from './math'
-import type { Font } from './text'
+import { DEFAULT_CHARS, type Font } from './text'
 
 export interface TextureOptions {
   /** Frame size in pixels for spritesheets and tilesets; `Sprite.frame` picks a cell, row by row. Default: whole image. */
@@ -37,8 +37,8 @@ export interface Renderer {
    */
   screen: Set<number>
   /**
-   * Renders the printable ASCII characters of a font (a CSS family, including web fonts) into a texture,
-   * for `spawnText`. Glyphs are white so `Sprite.tint` colors them. Cached by options.
+   * Renders a font (a CSS family, including web fonts) into a texture for `spawnText`: ASCII, accented Latin letters,
+   * ñ, ¿, ¡ and Nahuatl macron vowels, plus `chars`. Glyphs are white so tint colors them. Cached by options.
    */
   loadFont(options?: FontOptions): Promise<Font>
   /** Last frame's totals, for profiling (`devtools()` shows them). */
@@ -54,6 +54,8 @@ export interface FontOptions {
   weight?: string
   /** `nearest` for pixel fonts. Default `linear`. */
   filter?: 'linear' | 'nearest'
+  /** Extra characters beyond `DEFAULT_CHARS`, e.g. `'←→♥★'`. */
+  chars?: string
 }
 
 export interface RendererOptions {
@@ -174,25 +176,25 @@ export function createRenderer(game: Game, backend: Backend) {
   }
 
   const fonts = new Map<string, Promise<Font>>()
-  const renderFont = async ({ family = 'monospace', size = 32, weight = 'normal', filter }: FontOptions): Promise<Font> => {
+  const renderFont = async ({ family = 'monospace', size = 32, weight = 'normal', filter, chars: extra = '' }: FontOptions): Promise<Font> => {
     const css = `${weight} ${size}px ${family}`
     await document.fonts.load(css)
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')!
     ctx.font = css
-    const chars = Array.from({ length: 95 }, (_, i) => String.fromCharCode(32 + i))
+    const chars = [...new Set(DEFAULT_CHARS + extra.normalize('NFC'))]
     const advances = chars.map((c) => ctx.measureText(c).width)
     // One padded cell per glyph, 16 per row, so the font is an ordinary spritesheet.
     const cellWidth = Math.ceil(Math.max(...advances)) + 2
     const cellHeight = Math.ceil(size * 1.3) + 2
     canvas.width = cellWidth * 16
-    canvas.height = cellHeight * 6
+    canvas.height = cellHeight * Math.ceil(chars.length / 16)
     ctx.font = css // resizing the canvas resets the context
     ctx.fillStyle = '#fff'
     ctx.textBaseline = 'top'
     chars.forEach((c, i) => ctx.fillText(c, (i % 16) * cellWidth + 1, Math.floor(i / 16) * cellHeight + 1))
     const texture = createTexture(canvas, { frameWidth: cellWidth, frameHeight: cellHeight, filter })
-    return { texture, size, cellWidth, cellHeight, lineHeight: Math.ceil(size * 1.2), advances }
+    return { texture, size, cellWidth, cellHeight, lineHeight: Math.ceil(size * 1.2), glyphs: new Map(chars.map((c, i) => [c, i])), advances }
   }
 
   game.set(Camera, camera)

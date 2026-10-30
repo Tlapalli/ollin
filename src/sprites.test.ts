@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Animation, animation, hit, overlaps, Position, Sprite } from './components'
 import { defineComponent, u16, World } from './ecs'
-import { spawnText, type Font } from './text'
+import { DEFAULT_CHARS, spawnText, type Font } from './text'
 
 describe('component defaults', () => {
   it('fills fields left out with the defaults, or 0', () => {
@@ -30,7 +30,8 @@ describe('animation', () => {
 
 describe('spawnText', () => {
   // 10 px font: every glyph advances 6 px and sits in a 8x14 cell.
-  const font: Font = { texture: 7, size: 10, cellWidth: 8, cellHeight: 14, lineHeight: 12, advances: Array(95).fill(6) }
+  const glyphs = new Map([...DEFAULT_CHARS].map((c, i) => [c, i]))
+  const font: Font = { texture: 7, size: 10, cellWidth: 8, cellHeight: 14, lineHeight: 12, glyphs, advances: Array(glyphs.size).fill(6) }
 
   it('spawns one sprite per visible character, laid out by advance and line', () => {
     const world = new World()
@@ -51,6 +52,21 @@ describe('spawnText', () => {
     text.set('ab')
     expect(world.count).toBe(2)
     expect(Position.x[text.entities[0]]).toBe(-6 - 1 + 4) // half of 12 px to the left, glyph padding, half a cell
+  })
+
+  it('maps accents and ñ (composed or not) to their glyphs, unknown characters to ?', () => {
+    const world = new World()
+    const text = spawnText(world, font, 'ñá\u0065\u0301ā→')
+    expect(text.entities.map((e) => Sprite.frame[e])).toEqual(['ñ', 'á', 'é', 'ā', '?'].map((c) => glyphs.get(c)))
+  })
+
+  it('tints and fades the whole text, and keeps the style across set', () => {
+    const world = new World()
+    const text = spawnText(world, font, 'ab', { tint: 0x112233 })
+    text.alpha = 0.5
+    text.tint = 0xf28c28
+    text.set('abc')
+    expect(text.entities.map((e) => [Sprite.tint[e], Sprite.alpha[e]])).toEqual(Array(3).fill([0xf28c28, 0.5]))
   })
 })
 

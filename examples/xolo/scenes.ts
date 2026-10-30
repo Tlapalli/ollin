@@ -19,6 +19,7 @@ import {
   type Entity,
   type Game,
   type Scene,
+  type Text,
   type TextOptions,
 } from '../../src'
 
@@ -86,10 +87,7 @@ function arena(game: Game, floor: number) {
 const confirmed = (input: Input) => ['Space', 'Enter', 'Pointer', 'Button0', 'Button9'].some((key) => input.pressed.has(key))
 
 /** Turns a text on and off every half second. */
-const blink = (game: Game, entities: readonly Entity[]) =>
-  every(game, 0.5, () => {
-    for (const e of entities) Sprite.alpha[e] = Sprite.alpha[e] ? 0 : 1
-  })
+const blink = (game: Game, text: Text) => every(game, 0.5, () => (text.alpha = text.alpha ? 0 : 1))
 
 export const menu: Scene = async (game) => {
   const { textures, sounds, text } = await load(game)
@@ -98,8 +96,8 @@ export const menu: Scene = async (game) => {
   arena(game, textures.floor)
 
   text('XOLO', { x: W / 2, y: 40, size: 56, tint: 0xf28c28 })
-  text('guide the cempasuchil petals home', { x: W / 2, y: 104, size: 12, tint: 0xf3e6c9 })
-  blink(game, text('press space or tap to start', { x: W / 2, y: 228, size: 11, tint: 0x1f9e9a }).entities)
+  text('guide the cempasúchil petals home', { x: W / 2, y: 104, size: 12, tint: 0xf3e6c9 })
+  blink(game, text('press space or tap to start', { x: W / 2, y: 228, size: 11, tint: 0x1f9e9a }))
 
   // A xolo trots back and forth: each tween starts the next one when it ends.
   const dog = world.spawn([Position, { x: 140, y: 170, z: ACTORS }], [Sprite, { w: 16, h: 16, texture: textures.xolo }], [Animation, { count: 2, fps: 6 }])
@@ -290,7 +288,7 @@ export const end =
 
     text(won ? 'the souls are home' : 'the spirits caught you', { x: W / 2, y: 60, size: 24, tint: won ? 0xf2c14e : 0xb5302a })
     text(`petals gathered: ${run.petals}`, { x: W / 2, y: 120, size: 12, tint: 0xf3e6c9 })
-    blink(game, text('press space or tap to play again', { x: W / 2, y: 228, size: 11, tint: 0x1f9e9a }).entities)
+    blink(game, text('press space or tap to play again', { x: W / 2, y: 228, size: 11, tint: 0x1f9e9a }))
     if (won) {
       every(game, 0.35, () =>
         burst(game.world, {
