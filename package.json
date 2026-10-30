@@ -14,6 +14,12 @@
   ],
   "license": "MIT",
   "author": "Diego Resendez",
+  "homepage": "https://github.com/Tlapalli/ollin#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tlapalli/ollin.git"
+  },
+  "bugs": "https://github.com/Tlapalli/ollin/issues",
   "type": "module",
   "sideEffects": false,
   "exports": {

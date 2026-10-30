@@ -2,9 +2,21 @@
   "name": "create-ollin",
   "version": "0.1.0",
   "description": "Start an Ollin game: npm create ollin@latest my-game",
-  "keywords": ["ollin", "game", "template", "vite"],
+  "keywords": [
+    "ollin",
+    "game",
+    "template",
+    "vite"
+  ],
   "license": "MIT",
   "author": "Diego Resendez",
+  "homepage": "https://github.com/Tlapalli/ollin/tree/main/create-ollin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tlapalli/ollin.git",
+    "directory": "create-ollin"
+  },
+  "bugs": "https://github.com/Tlapalli/ollin/issues",
   "type": "module",
   "bin": {
     "create-ollin": "index.js"

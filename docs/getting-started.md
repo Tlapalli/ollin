@@ -127,4 +127,4 @@ import.meta.hot?.accept('./game', (m) => m && game.scene(m.play))
 - Make petals pop when caught: `tween(game, petal, Sprite, { w: 0, h: 0 }, { duration: 0.2, onDone: () => world.despawn(petal) })`.
 - Add a menu scene that starts `play` when `input.pressed.has('Space')`.
 
-Then read [the guide](./guide.md) for everything else: animation, cameras, tile maps, physics, particles and more. For a bigger example, see `examples/xolo` in the Ollin repository: a menu, three levels, enemies and lives.
+Then read [the guide](./guide.md) for everything else: animation, cameras, tile maps, physics, particles and more. For a bigger example, see [`examples/xolo`](https://github.com/Tlapalli/ollin/tree/main/examples/xolo) in the Ollin repository: a menu, three levels, enemies and lives.
