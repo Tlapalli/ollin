@@ -11,10 +11,10 @@
 - **Performance first:** data lives in SoA `Float32Array`s that go straight to the GPU and can be shared with WASM.
 - **Thin friendly layer:** `createGame`, `spawn`, `query`. The data-oriented core stays exposed for those who need it.
 - **Plugins:** plain `(game) => void` functions. Rendering, input, audio, physics (`@tlapalli/ollin/rapier`) and 3D are all optional.
-- **Batteries that stay out of the way:** typed asset handles (no global string keys), spritesheets, a camera, and Tiled map import (orthogonal and isometric).
+- **Batteries that stay out of the way:** typed asset handles (no global string keys), spritesheets, a camera, and Tiled map import (orthogonal and isometric, flipped tiles, `map.tileAt(layer, x, y)` for tile collision, `cellAt`/`cellCenter` for grid logic and pathfinding).
 - **Smooth on any screen:** a fixed-rate simulation for physics, drawn interpolated so it doesn't judder on 120 Hz displays.
 - **Scenes with hot reload:** a level is a function; `game.scene(level)` swaps or restarts it, and Vite HMR restarts it in place when you save.
-- **Sprites that do the usual things:** spritesheet animation (`Animation`), tint, alpha and flip per sprite, and bitmap text from any CSS or web font, accents and ñ included (`renderer.loadFont` + `spawnText`), with screen-space layers for HUDs.
+- **Sprites that do the usual things:** spritesheet animation (`Animation`), tint, alpha and flip per sprite, and bitmap text from any CSS or web font, accents and ñ included (`renderer.loadFont` + `spawnText`), with screen-space layers for HUDs. A sprite without a texture is a solid rectangle in its tint, for panels, bars and fades.
 - **Gameplay helpers:** `tween` any component field with easing, `after`/`every` timers that end with their scene, GPU particle bursts (`renderer.burst`, no per-frame CPU cost), box `overlaps`/`hit` tests, and input from keyboard, multi-touch and gamepads, with `input.pressed` for one-shot actions.
 - **WebGL2 or WebGPU:** `webgl2()` runs everywhere; `webgpu()` is a drop-in with the same API and output, and falls back to WebGL2 where WebGPU is missing.
 - **Devtools:** `devtools()` shows fps, main-thread ms per frame, entity, sprite and draw call counts; click a sprite to inspect its components live. Toggle with the key left of 1.
@@ -77,7 +77,7 @@ Open `bench/ollin.html?count=N`, `bench/phaser.html?count=N` and `bench/phaser-g
 
 ```bash
 npm install
-npm run dev        # examples: bunnymark, physics, a Tiled platformer, an isometric map, a small complete game (xolo) and the Phaser benchmark
+npm run dev        # examples: bunnymark, physics, a Tiled platformer, an isometric map, three small complete games (xolo, ocelotl, mictlan) and the Phaser benchmark
 npm test
 npm run typecheck
 ```

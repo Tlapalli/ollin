@@ -5,7 +5,7 @@
 ## Commands
 
 ```bash
-npm run dev        # Vite dev server for examples/ (bunnymark, physics, platformer, iso, xolo, bench)
+npm run dev        # Vite dev server for examples/ (bunnymark, physics, platformer, iso, xolo, ocelotl, mictlan, bench)
 npm test           # Vitest
 npm run typecheck  # tsc (noEmit)
 npm run build      # dist/: Vite library build (JS) + tsc declarations
@@ -16,6 +16,7 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 ## Docs and template
 
 - User docs (Getting started and the Guide) live in the studio site repo, `github.com/Tlapalli/tlapalli.github.io` (`src/content/docs/docs/`), published at https://tlapalli.github.io/docs/. When a public API changes, update the guide there for the same release and check its snippets against the code. The site runs copies of the template game (`src/demo/game.ts`) and of `examples/xolo` (`src/xolo/`) on the published package; update them when those change.
+- The site also publishes an **API reference generated from the doc comments** (TSDoc) of the published `.d.ts` files. Every public export gets a `/** */` comment written for users; `ponytail:` notes and other internal remarks go in `//` comments, never inside `/** */`. Name option parameters (`options: GameOptions`) instead of destructuring them in the signature, or the reference shows `__namedParameters`.
 - `create-ollin/` is the `npm create ollin` package (published on its own, not part of `ollin`). Its template depends on the published `ollin` version; CI packs `ollin` and builds the template against it, so template code must keep compiling with the current API. `npm test` covers the scaffolder.
 
 ## Conventions
@@ -30,7 +31,7 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 - **ECS (`src/ecs.ts`):** components are SoA typed arrays indexed by entity (`Position.x[e]`). Systems iterate `query.entities`. Never introduce per-entity objects on hot paths.
 - **Never cache component arrays across frames** (`const { x } = Position` at module level or in scene setup). They are replaced when the world grows past its capacity (16k entities by default), and the same will happen when WASM memory grows. Read them at the top of each system run. Growth uses `ArrayBuffer.transfer`, so a stale array reads as empty and the bug shows up as vanishing sprites. Resizable buffers would make caching safe, but V8 runs loops over them ~3x slower (measured: +40% render time at 20k sprites), so do not switch without re-measuring.
 - `world.spawn` takes tuples only (`[Position, { x: 1 }]`, `[Tag]`) so TypeScript rejects unknown fields. Keep it that way.
-- Built-in components live in `src/components.ts` (`Position`, `Rotation`, `Sprite`, `Animation`, `Interpolate`). The renderer draws every entity with `Position` + `Sprite`, centered on `Position` and rotated by `Rotation` if present, and advances `Animation` (it writes `Sprite.frame`). `Sprite.tint` (0xRRGGBB, multiplies, so it shows true colors only on white art) and `alpha` travel as one packed RGBA word; `flipX`/`flipY` cost nothing (mirrored UVs).
+- Built-in components live in `src/components.ts` (`Position`, `Rotation`, `Sprite`, `Animation`, `Interpolate`). The renderer draws every entity with `Position` + `Sprite`, centered on `Position` and rotated by `Rotation` if present, and advances `Animation` (it writes `Sprite.frame`). Texture 0 is a white pixel the renderer creates, so a `Sprite` without `texture` is a solid rectangle in its tint (panels, bars, fades). `Sprite.tint` (0xRRGGBB, multiplies, so it shows true colors only on white art) and `alpha` travel as one packed RGBA word; `flipX`/`flipY` cost nothing (mirrored UVs).
 - Components can declare defaults: `defineComponent({ hp: u16 }, { hp: 3 })`. Use them whenever 0 would be a broken value (`Sprite.alpha`, `Sprite.tint`, `Animation.count`), so `spawn` stays short for beginners.
 - Component storage is global: only one `World` is live at a time, and a new one takes over its components with fresh storage.
 - **Plugins** are `(game: Game) => void | Promise<void>`. They register resources with `game.set(token, value)` and systems with `game.system(fn, stage)`. The core must not import any plugin.
@@ -50,7 +51,7 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 - **Simple collisions** without Rapier: `overlaps(a, b, inset)` and `hit(e, others, inset)` test sprite boxes (`src/components.ts`). Use Rapier when things must push each other.
 - **Devtools** (`src/devtools.ts`) is a DOM overlay, not sprites, so it survives `world.clear()` and stays out of the counts it shows. It measures main-thread work by wrapping `game.step` and reads `renderer.stats` (draw calls and sprites, reset each frame). It also sets `globalThis.ollin = { game }` for the browser console. Components show in the inspector only if named: built-ins always, others through `devtools({ components: { Velocity } })`.
 - **Camera** is a resource (`game.get(Camera)`) created by the renderer. The default view maps world pixels 1:1 to the canvas; use `camera.toWorld` for pointer coordinates.
-- **Tiled** (`src/tiled.ts`): `loadTilemap` fetches a JSON map (.tmj, orthogonal or isometric, CSV layers, embedded or .tsj tilesets) and `spawnTilemap` turns it into entities, one per tile, with `z = base + layer index`. Hidden layers spawn `Position` only, for collision. Tile images sit on the bottom of their cell like in Tiled, so tall isometric blocks grow upward. Keep `spawnTilemap` free of DOM and fetch so it stays testable in Node.
+- **Tiled** (`src/tiled.ts`): `loadTilemap` fetches a JSON map (.tmj, orthogonal or isometric, CSV layers, embedded or .tsj tilesets) and `spawnTilemap` turns it into entities, one per tile, with `z = base + layer index`. Hidden layers spawn `Position` only, for collision. `map.tileAt(layer, x, y)` returns the tile under a world point (the diamond cell on isometric maps, -1 when empty or despawned), so games test collision against tile layers without their own grid; `map.cellAt(x, y)` and `map.cellCenter(col, row)` convert between world points and cells (pathfinding, grid logic; `examples/ocelotl` runs a BFS flow field on them). Horizontal and vertical flip flags become `Sprite.flipX`/`flipY`; diagonal flips are ignored. Tile images sit on the bottom of their cell like in Tiled, so tall isometric blocks grow upward. Keep `spawnTilemap` free of DOM and fetch so it stays testable in Node.
 - **WASM:** physics comes from Rapier (`src/rapier.ts`, `@dimforge/rapier2d-simd-compat`). Rapier owns its bodies, and a `physics`-stage system creates bodies for new entities, removes them for despawned ones, pushes kinematic bodies to their `Position`, steps, and writes dynamic transforms back to `Position`/`Rotation`. Units: Rapier uses meters, the ECS uses pixels (`scale`, default 50 px/m). Write custom WASM only for measured hot paths.
 
 ## Roadmap
@@ -71,5 +72,6 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 14. Unicode text (accents, ñ, Nahuatl macrons, `chars`), `text.tint`/`text.alpha` (done).
 15. Docs and `create-ollin` template (done).
 16. Render interpolation, kinematic bodies and the `physics` stage, GPU particles, radix y-sort (done).
+17. Dogfooding games `examples/ocelotl` (isometric waves) and `examples/mictlan` (side-scrolling action platformer), `map.tileAt`, Tiled flips, untextured sprites (done).
 
 Out of scope for now: editor, networking, Canvas2D renderer.
