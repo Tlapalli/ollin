@@ -1,6 +1,7 @@
 /** Column-major mat4 in a Float32Array: same layout as WebGL and three.js, no conversions. */
 export type Mat4 = Float32Array
 
+/** A new zeroed `Mat4`. */
 export const mat4 = (): Mat4 => new Float32Array(16)
 
 /** Orthographic projection. With top < bottom the Y axis grows downward, like screen space. */

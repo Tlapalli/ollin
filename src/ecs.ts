@@ -8,14 +8,22 @@ type TypedArray =
   | Uint16Array
   | Uint32Array
 
+/** A typed array constructor used as a component field type: `f32`, `u8`, ... */
 export type FieldType = new (length: number) => TypedArray
+/** Field names and types of a component: `{ x: f32, hp: u8 }`. */
 export type Schema = Record<string, FieldType>
 
+/** Field type: 32-bit float. Positions, speeds, timers. */
 export const f32 = Float32Array
+/** Field type: 64-bit float, for values that need more precision than `f32`. */
 export const f64 = Float64Array
+/** Field type: signed 32-bit integer. */
 export const i32 = Int32Array
+/** Field type: unsigned 8-bit integer (0–255). Flags, small counts, enums. */
 export const u8 = Uint8Array
+/** Field type: unsigned 16-bit integer (0–65535). */
 export const u16 = Uint16Array
+/** Field type: unsigned 32-bit integer. Colors (0xRRGGBB), texture ids, entity ids. */
 export const u32 = Uint32Array
 
 const META = Symbol('component')
@@ -36,7 +44,9 @@ export type Component<S extends Schema = Schema> = { [K in keyof S]: InstanceTyp
   readonly [META]: Meta
 }
 
+/** Initial values for a component in `world.spawn` / `world.add`: any subset of its fields. */
 export type Values<C> = C extends Component<infer S> ? Partial<Record<keyof S, number>> : never
+/** An entity is just an id; its data lives in component arrays (`Position.x[e]`). Ids are recycled after `despawn`. */
 export type Entity = number
 
 // ponytail: component storage is global, so only one World is live at a time: a new World (game restart, HMR, tests)
@@ -100,6 +110,7 @@ export class Query {
 // Always a tuple: a `C | [C, values]` union would let TS skip excess-key checks, so typos like `{ X: 1 }` would compile.
 type Init<C> = readonly [C, NoInfer<Values<C>>?]
 
+/** Holds the entities and their components. There is one per game: `game.world`. */
 export class World {
   private capacity: number
   private next = 0

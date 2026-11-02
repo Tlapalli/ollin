@@ -4,6 +4,7 @@ import { token, type Game } from './core'
 import { mat4, ortho } from './math'
 import { DEFAULT_CHARS, type Font } from './text'
 
+/** Options for `renderer.loadTexture`: spritesheet grid and filtering. */
 export interface TextureOptions {
   /** Frame size in pixels for spritesheets and tilesets; `Sprite.frame` picks a cell, row by row. Default: whole image. */
   frameWidth?: number
@@ -18,6 +19,7 @@ export interface TextureOptions {
 
 type TextureSource = string | readonly [url: string, options: TextureOptions]
 
+/** Draws every entity with `Position` + `Sprite`, and loads textures and fonts: `game.get(Renderer)`. */
 export interface Renderer {
   /** The GPU API in use; `webgpu()` falls back to `webgl2` where WebGPU is not available. */
   readonly backend: 'webgl2' | 'webgpu'
@@ -50,6 +52,7 @@ export interface Renderer {
   readonly stats: { drawCalls: number; sprites: number }
 }
 
+/** Options for `renderer.burst`. */
 export interface BurstOptions {
   x: number
   y: number
@@ -74,6 +77,7 @@ export interface BurstOptions {
   gravity?: number
 }
 
+/** Options for `renderer.loadFont`. */
 export interface FontOptions {
   /** CSS font family. Default `monospace`. */
   family?: string
@@ -87,11 +91,13 @@ export interface FontOptions {
   chars?: string
 }
 
+/** Options for the `webgl2()` and `webgpu()` renderer plugins. */
 export interface RendererOptions {
   /** Clear color, RGBA from 0 to 1. */
   background?: [number, number, number, number]
 }
 
+/** Resource key for the `Renderer` registered by `webgl2()` or `webgpu()`. */
 export const Renderer = token<Renderer>('Renderer')
 
 /** Instance layout every backend reads: x, y, z, w, h, angle, u, v, uw, vh as f32, then RGBA as 4 bytes. */
@@ -275,6 +281,13 @@ export function createRenderer(game: Game, backend: Backend) {
       }) - 1
     )
   }
+
+  // Texture 0 is one white pixel, so a Sprite without a texture is a solid rectangle in its tint: panels, bars, fades.
+  const white = globalThis.document?.createElement('canvas') ?? ({ width: 1, height: 1 } as HTMLCanvasElement)
+  white.width = white.height = 1
+  const ctx = white.getContext?.('2d')
+  if (ctx) (ctx.fillStyle = '#fff'), ctx.fillRect(0, 0, 1, 1)
+  createTexture(white, {})
 
   const fonts = new Map<string, Promise<Font>>()
   const renderFont = async ({ family = 'monospace', size = 32, weight = 'normal', filter, chars: extra = '' }: FontOptions): Promise<Font> => {

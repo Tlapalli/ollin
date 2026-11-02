@@ -4,8 +4,8 @@ import { ortho, type Mat4 } from './math'
 /**
  * 2D camera: `x`/`y` is the world point at the center of the screen, `zoom` scales world pixels.
  * The default view (centered on the canvas, zoom 1) maps world coordinates 1:1 to canvas pixels.
- * ponytail: no camera rotation; add it to viewProj and toWorld when a game needs it
  */
+// ponytail: no camera rotation; add it to viewProj and toWorld when a game needs it
 export interface Camera {
   x: number
   y: number
@@ -18,8 +18,10 @@ export interface Camera {
   viewProj(out: Mat4): Mat4
 }
 
+/** Resource key for the camera, created by the renderer plugin: `game.get(Camera)`. */
 export const Camera = token<Camera>('Camera')
 
+/** A camera centered on a `width` x `height` canvas at zoom 1. The renderer creates one for you. */
 export function createCamera(width: number, height: number): Camera {
   return {
     x: width / 2,

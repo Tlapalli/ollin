@@ -22,15 +22,8 @@ const [map, textures, font] = await Promise.all([
 const BLOCKS = Position.z[map.layers.blocks[0]]
 renderer.ySort.add(BLOCKS)
 
-const { tileWidth: tw, tileHeight: th } = map
-const originX = map.width / 2 // isometric maps are as wide as they are tall in grid cells here
-const cellOf = (x: number, y: number) => {
-  const u = (x - originX) / (tw / 2)
-  const v = y / (th / 2)
-  return `${Math.floor((v + u) / 2)},${Math.floor((v - u) / 2)}`
-}
-// A block's bottom corner is the bottom of its diamond; half a tile up is the diamond's center.
-const solid = new Set(map.layers.blocks.map((e) => cellOf(Position.x[e], Position.y[e] + Sprite.h[e] / 2 - th / 2)))
+// A point is blocked when a block stands on its diamond cell.
+const solid = (x: number, y: number) => map.tileAt('blocks', x, y) >= 0
 
 const start = map.objects.find((o) => o.name === 'player')!
 const W = 32
@@ -57,9 +50,9 @@ game.system((dt) => {
   const { x, y } = Position
   // Move each axis separately so the walker slides along walls; collide with the feet only.
   const nx = x[walker] + dx * SPEED * dt
-  if (!solid.has(cellOf(nx, y[walker] + H / 2))) x[walker] = nx
+  if (!solid(nx, y[walker] + H / 2)) x[walker] = nx
   const ny = y[walker] + dy * SPEED * dt * 0.5 // isometric: vertical moves cover half the distance
-  if (!solid.has(cellOf(x[walker], ny + H / 2))) y[walker] = ny
+  if (!solid(x[walker], ny + H / 2)) y[walker] = ny
   // Face the way we walk (the sheet faces right), and stand still on frame 0 when idle.
   if (dx) Sprite.flipX[walker] = dx < 0 ? 1 : 0
   Animation.fps[walker] = dx || dy ? 8 : 0

@@ -2,9 +2,12 @@ import { World } from './ecs'
 
 /** Typed key for a shared resource (renderer, input, physics...). */
 export type Token<T> = symbol & { readonly __type?: T }
+/** Creates a typed resource key: `const Score = token<number>('Score')`, then `game.set(Score, 0)` and `game.get(Score)`. */
 export const token = <T>(name: string) => Symbol(name) as Token<T>
 
+/** A function run every frame (or every fixed tick), with the elapsed time in seconds. Register it with `game.system`. */
 export type System = (dt: number) => void
+/** Adds a feature to the game: registers resources with `game.set` and systems with `game.system`. Pass plugins to `createGame`. */
 export type Plugin = (game: Game) => void | Promise<void>
 /**
  * A level, menu or screen. It spawns entities and registers systems; it may return a cleanup function
@@ -18,6 +21,7 @@ export type Scene = (game: Game) => void | (() => void) | Promise<void | (() => 
  */
 export type Stage = 'fixed' | 'physics' | 'update' | 'render'
 
+/** Options for `createGame`. */
 export interface GameOptions {
   canvas: HTMLCanvasElement
   plugins?: Plugin[]
@@ -27,6 +31,7 @@ export interface GameOptions {
   fixedDt?: number
 }
 
+/** The running game: its world, resources, systems, scenes and loop. Created by `createGame`. */
 export interface Game {
   readonly canvas: HTMLCanvasElement
   readonly world: World
@@ -56,7 +61,12 @@ export interface Game {
 // Caps catch-up after a stall (tab in background, breakpoint) to a few fixed steps instead of a spiral of death.
 const MAX_DT = 0.1
 
-export async function createGame({ canvas, plugins = [], capacity, fixedDt = 1 / 60 }: GameOptions): Promise<Game> {
+/**
+ * Creates a game on a canvas and runs its plugins in order (renderer first, so others can use it).
+ * `const game = await createGame({ canvas, plugins: [webgl2(), input(), audio()] })`, then `game.scene(...)` and `game.start()`.
+ */
+export async function createGame(options: GameOptions): Promise<Game> {
+  const { canvas, plugins = [], capacity, fixedDt = 1 / 60 } = options
   const resources = new Map<symbol, unknown>()
   const stages: Record<Stage, System[]> = { fixed: [], physics: [], update: [], render: [] }
   let accumulator = 0

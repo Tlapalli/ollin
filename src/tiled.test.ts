@@ -36,7 +36,19 @@ describe('spawnTilemap', () => {
     expect([Position.x[a], Position.y[a], Position.z[a]]).toEqual([24, 8, 5])
     expect([Sprite.texture[a], Sprite.frame[a]]).toEqual([100, 1])
     expect([Sprite.texture[b], Sprite.frame[b], Position.y[b]]).toEqual([200, 1, 24])
-    expect(Sprite.frame[c]).toBe(0) // flip flags stripped from the gid
+    expect([Sprite.frame[c], Sprite.flipX[c], Sprite.flipY[c]]).toEqual([0, 1, 0]) // flip flags become Sprite.flipX/flipY
+    expect(Sprite.flipX[a]).toBe(0)
+    // tileAt finds the tile under a world point, -1 for empty cells, outside the map and despawned tiles.
+    expect(result.tileAt('ground', 20, 2)).toBe(a)
+    expect(result.tileAt('ground', 47, 31)).toBe(c)
+    expect(result.tileAt('ground', 2, 2)).toBe(-1)
+    expect(result.tileAt('ground', -1, 2)).toBe(-1)
+    world.despawn(a)
+    expect(result.tileAt('ground', 20, 2)).toBe(-1)
+    expect(result.tileAt('solid', 2, 2)).toBeGreaterThanOrEqual(0) // hidden layers too, for collision
+    expect(result.cellAt(40, 20)).toEqual({ col: 2, row: 1 })
+    expect(result.cellCenter(2, 1)).toEqual({ x: 40, y: 24 })
+    expect([result.cols, result.rows]).toEqual([3, 2])
     expect(result).toMatchObject({ width: 48, height: 32, tileWidth: 16 })
     expect(result.objects).toEqual([
       { id: 7, name: 'player', type: 'spawn', layer: 'things', z: 6, x: 5, y: 6, width: 0, height: 0, properties: { hp: 3 } },
@@ -78,6 +90,14 @@ describe('spawnTilemap (isometric)', () => {
     expect([Position.x[c], Position.y[c]]).toEqual([32, 16]) // (col 0, row 1) is down-left
     expect([Position.x[d], Position.y[d]]).toEqual([64, 32])
     expect(result).toMatchObject({ width: 128, height: 64 })
+    // tileAt tests the diamond: the top diamond spans (32..96, 0..32); just left of it is empty space.
+    expect(result.tileAt('ground', 64, 2)).toBe(a)
+    expect(result.tileAt('ground', 96, 16)).toBe(b)
+    expect(result.tileAt('ground', 40, 2)).toBe(-1)
+    // cellAt and cellCenter convert between world points and diamond cells, both ways.
+    expect(result.cellAt(96, 20)).toEqual({ col: 1, row: 0 })
+    expect(result.cellCenter(1, 0)).toEqual({ x: 96, y: 32 })
+    expect(result.cellAt(96, 32)).toEqual({ col: 1, row: 0 })
     // The object sits at grid point (1, 1) in tile heights: the corner all four cells share.
     expect(result.objects[0]).toMatchObject({ x: 64, y: 32 })
   })

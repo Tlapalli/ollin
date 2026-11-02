@@ -8,7 +8,8 @@ export const Position = defineComponent({ x: f32, y: f32, z: f32 })
 export const Rotation = defineComponent({ angle: f32 })
 
 /**
- * Textured quad centered on `Position`. `texture` is the id returned by `renderer.loadTexture`;
+ * Textured quad centered on `Position`. `texture` is the id returned by `renderer.loadTexture`; without one (texture 0)
+ * the sprite is a solid rectangle in its `tint`, for panels, bars and screen fades.
  * `frame` picks a cell when the texture was loaded as a spritesheet or tileset.
  * `tint` multiplies the texture by a 0xRRGGBB color (white = unchanged), `alpha` fades it (0–1),
  * `flipX`/`flipY` (0 or 1) mirror it, e.g. to face a character left.
@@ -69,8 +70,8 @@ export function overlaps(a: Entity, b: Entity, inset = 0) {
   return Math.abs(x[a] - x[b]) < (w[a] + w[b]) / 2 - 2 * inset && Math.abs(y[a] - y[b]) < (h[a] + h[b]) / 2 - 2 * inset
 }
 
-/** The first of `others` that overlaps `e` (see `overlaps`), or -1. `hit(player, enemies.entities)` */
 // ponytail: linear scan, fine for one-vs-many; add a spatial grid for many-vs-many (bullets vs crowds)
+/** The first of `others` that overlaps `e` (see `overlaps`), or -1. `hit(player, enemies.entities)` */
 export function hit(e: Entity, others: readonly Entity[], inset = 0): Entity {
   for (const o of others) if (o !== e && overlaps(e, o, inset)) return o
   return -1

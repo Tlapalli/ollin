@@ -4,6 +4,7 @@ import type { Plugin } from './core'
 import type { Component, Entity, World } from './ecs'
 import { Renderer } from './render'
 
+/** Options for the `devtools()` plugin. */
 export interface DevtoolsOptions {
   /** `KeyboardEvent.code` that shows and hides the panel. Default `Backquote` (the key left of 1). */
   key?: string

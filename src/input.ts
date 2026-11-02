@@ -1,10 +1,12 @@
 import { token, type Plugin } from './core'
 
+/** A position in canvas pixels. */
 export interface Point {
   x: number
   y: number
 }
 
+/** Keyboard, pointer, touch and gamepad state: `game.get(Input)` after adding the `input()` plugin. */
 export interface Input {
   /** Pressed keys by `KeyboardEvent.code` ('KeyA', 'Space', 'ArrowLeft'...). */
   keys: Set<string>
@@ -26,8 +28,10 @@ export interface Input {
   gamepads: (Gamepad | null)[]
 }
 
+/** Resource key for the `Input` registered by `input()`. */
 export const Input = token<Input>('Input')
 
+/** Plugin that tracks keyboard, pointer, touch and gamepad input and registers the `Input` resource. */
 export const input = (): Plugin => (game) => {
   const state: Input = { keys: new Set(), pressed: new Set(), pointer: { x: 0, y: 0, down: false }, pointers: new Map(), gamepads: [] }
   const { canvas } = game

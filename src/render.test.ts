@@ -86,3 +86,11 @@ it('sorts thousands of sprites spread over a wide range (several radix passes)',
   expect(drawn.length).toBe(5000)
   expect(drawn.every((y, i) => i === 0 || drawn[i - 1] <= y + 1 / 16)).toBe(true)
 })
+
+it('draws sprites without a texture as solid rectangles (texture 0 is a white pixel)', async () => {
+  const { game, texture, sprites } = await setup()
+  expect(texture).toBeGreaterThan(0)
+  game.world.spawn([Position, { x: 7 }], [Sprite, { w: 10, h: 10, tint: 0xff0000 }])
+  game.step(0.1)
+  expect(sprites).toEqual([7])
+})

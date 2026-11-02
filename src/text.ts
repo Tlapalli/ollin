@@ -24,6 +24,7 @@ export interface Font {
   advances: number[]
 }
 
+/** Options for `spawnText`. */
 export interface TextOptions {
   /** Top-left corner of the text block (or top-center / top-right with `align`). */
   x?: number
@@ -37,6 +38,7 @@ export interface TextOptions {
   align?: 'left' | 'center' | 'right'
 }
 
+/** Text spawned by `spawnText`: change it with `set`, restyle it with `tint` and `alpha`, remove it with `destroy`. */
 export interface Text {
   /** One sprite entity per visible character. */
   readonly entities: Entity[]
@@ -57,8 +59,8 @@ const warned = new Set<string>()
  * Spawns a line (or lines, with `\n`) of text as one sprite per character, so text batches, sorts and
  * fades like any other sprite. Put it on a `renderer.screen` layer for HUDs. Characters missing from the font draw
  * as `?` and log a warning once.
- * ponytail: no kerning and no combining marks beyond what NFC composes; shape text in a canvas if a game needs scripts
  */
+// ponytail: no kerning and no combining marks beyond what NFC composes; shape text in a canvas if a game needs scripts
 export function spawnText(world: World, font: Font, value: string, options: TextOptions = {}): Text {
   const { x = 0, y = 0, z = 0, size = font.size, align = 'left' } = options
   const scale = size / font.size

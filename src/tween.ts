@@ -1,6 +1,7 @@
 import type { Game } from './core'
 import type { Component, Entity, Values } from './ecs'
 
+/** Easing curve: maps progress 0–1 to eased progress. See `ease`. */
 export type Ease = (t: number) => number
 
 /** Easing curves for `tween`: `t` goes from 0 to 1. */
@@ -13,6 +14,7 @@ export const ease = {
   outBack: (t: number) => 1 + 2.7 * (t - 1) ** 3 + 1.7 * (t - 1) ** 2,
 } satisfies Record<string, Ease>
 
+/** Options for `tween`. */
 export interface TweenOptions {
   /** Seconds. Default 0.3. */
   duration?: number
@@ -26,7 +28,8 @@ export interface TweenOptions {
  * stops by itself when done or when the entity loses the component, and returns a function that cancels it.
  * Inside a scene it ends with the scene. Fields are interpolated as plain numbers, so use `mixColor` for `Sprite.tint`.
  */
-export function tween<C extends Component>(game: Game, e: Entity, component: C, to: Values<C>, { duration = 0.3, ease: curve = ease.linear, onDone }: TweenOptions = {}) {
+export function tween<C extends Component>(game: Game, e: Entity, component: C, to: Values<C>, options: TweenOptions = {}) {
+  const { duration = 0.3, ease: curve = ease.linear, onDone } = options
   const store = component as unknown as Record<string, Float32Array>
   const target = to as Record<string, number>
   const fields = Object.keys(target)

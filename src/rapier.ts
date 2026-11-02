@@ -9,6 +9,7 @@ import { defineComponent, f32, u8, type Entity } from './ecs'
  * (moving platforms, doors, elevators).
  */
 export const BodyType = { Dynamic: 0, Fixed: 1, Kinematic: 2 } as const
+/** Collider shapes for `Collider.shape`. */
 export const Shape = { Box: 0, Ball: 1 } as const
 
 /**
@@ -21,6 +22,7 @@ export const RigidBody = defineComponent({ type: u8, created: u8 })
 /** Collider in pixels: `w`/`h` for boxes, `w` is the diameter for balls. Zero means Rapier's default. */
 export const Collider = defineComponent({ shape: u8, w: f32, h: f32, density: f32, friction: f32, restitution: f32 })
 
+/** The Rapier world and helpers: `game.get(Physics)` after adding the `rapier()` plugin. */
 export interface Physics {
   /** The Rapier module (`Ray`, `ColliderDesc`, ...), so games don't import their own copy. */
   rapier: typeof RAPIER
@@ -32,8 +34,10 @@ export interface Physics {
   scale: number
 }
 
+/** Resource key for the `Physics` registered by `rapier()`. */
 export const Physics = token<Physics>('Physics')
 
+/** Options for the `rapier()` plugin. */
 export interface RapierOptions {
   /** Gravity in m/s², positive is down (screen space). */
   gravity?: number
@@ -41,6 +45,10 @@ export interface RapierOptions {
   scale?: number
 }
 
+/**
+ * Plugin that runs Rapier 2D physics for entities with `RigidBody` + `Collider`, stepping in the `physics` stage.
+ * `createGame({ canvas, plugins: [webgl2(), rapier({ gravity: 25, scale: 32 })] })`
+ */
 export const rapier = ({ gravity = 9.81, scale = 50 }: RapierOptions = {}): Plugin =>
   async (game) => {
     await RAPIER.init()

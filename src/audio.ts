@@ -1,5 +1,6 @@
 import { token, type Plugin } from './core'
 
+/** Options for `audio.play`. */
 export interface PlayOptions {
   /** Gain multiplier, 1 = as recorded. */
   volume?: number
@@ -8,6 +9,7 @@ export interface PlayOptions {
   rate?: number
 }
 
+/** Web Audio playback: `game.get(Audio)` after adding the `audio()` plugin. */
 export interface Audio {
   context: AudioContext
   /** Master volume, 0–1. */
@@ -18,8 +20,10 @@ export interface Audio {
   play(sound: AudioBuffer, options?: PlayOptions): () => void
 }
 
+/** Resource key for the `Audio` registered by `audio()`. */
 export const Audio = token<Audio>('Audio')
 
+/** Plugin that sets up Web Audio and registers the `Audio` resource. Browsers start audio after the first input. */
 export const audio = (): Plugin => (game) => {
   const context = new AudioContext()
   const master = context.createGain()
