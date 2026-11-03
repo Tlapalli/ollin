@@ -1,6 +1,6 @@
 {
   "name": "@tlapalli/ollin",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "2D/2.5D game engine in TypeScript: data-oriented ECS, WASM and plugins.",
   "keywords": [
     "game-engine",
