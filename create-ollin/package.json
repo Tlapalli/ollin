@@ -1,6 +1,6 @@
 {
   "name": "create-ollin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Start an Ollin game: npm create ollin@latest my-game",
   "keywords": [
     "ollin",
