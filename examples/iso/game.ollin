@@ -1,0 +1,7 @@
+// What the iso example loads, declared once. The ollin() Vite plugin (examples/vite.config.ts) compiles this file:
+// `import { game, assets } from './game.ollin'` creates the game and loads everything in parallel.
+#game(background: #1c1714, devtools: true)
+
+#map     map    ./map.tmj
+#texture walker ./walker.png (frame: 32x48)
+#font    ui     (family: "ui-monospace, monospace", size: 32, weight: bold, chars: "←↑→↓")

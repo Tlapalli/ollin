@@ -30,6 +30,10 @@
     "./rapier": {
       "types": "./dist/rapier.d.ts",
       "import": "./dist/rapier.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js"
     }
   },
   "files": [
@@ -55,6 +59,7 @@
   },
   "devDependencies": {
     "@dimforge/rapier2d-simd-compat": "^0.21.0",
+    "@types/node": "^22.20.5",
     "phaser": "^4.2.1",
     "pixi.js": "^8.23.0",
     "typescript": "^7.0.2",

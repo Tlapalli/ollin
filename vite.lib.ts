@@ -7,7 +7,7 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: true,
     target: 'es2022',
-    lib: { entry: { index: 'src/index.ts', rapier: 'src/rapier.ts' }, formats: ['es'] },
-    rollupOptions: { external: [/^@dimforge\//] },
+    lib: { entry: { index: 'src/index.ts', rapier: 'src/rapier.ts', vite: 'src/vite.ts' }, formats: ['es'] },
+    rollupOptions: { external: [/^@dimforge\//, /^node:/] },
   },
 })

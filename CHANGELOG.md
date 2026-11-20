@@ -9,6 +9,10 @@
 - Packed spritesheets: `renderer.loadAtlas(url)` loads Aseprite and TexturePacker JSON (array or hash) with frames of
   any size, trimming and Aseprite tags as ready-made animations (`[Animation, atlas.tags.run]`,
   `[Sprite, atlas.sprite('idle 0')]`).
+- `.ollin` directive files: declare the game and its assets once (`#game(width: 1280, pixelArt: true)`,
+  `#texture tiles ./tiles.png (frame: 16x16)`, `#atlas`, `#sound`, `#font`, `#map`) and
+  `import { game, assets } from './game.ollin'`. The `ollin()` Vite plugin (`@tlapalli/ollin/vite`) compiles them,
+  checks every file exists (errors point at the line) and writes typed declarations for the editor.
 - Additive layers: `renderer.additive.add(z)` draws that layer's sprites and particles with additive blending, for
   glows, fire and sparks.
 - `Query.version` changes whenever an entity enters or leaves the query.

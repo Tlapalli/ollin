@@ -1,22 +1,16 @@
-import { Animation, Camera, createGame, devtools, input, Input, loadTilemap, Position, Renderer, spawnText, Sprite, webgl2 } from '../../src'
+import { Animation, Camera, Input, Position, Renderer, spawnText, Sprite } from '../../src'
+import { assets, game } from './game.ollin'
 
 // Arrow keys or WASD to walk around the temple blocks. The blocks layer is y-sorted, so the walker
 // goes behind blocks that are closer to the camera and in front of the ones behind it.
-const canvas = document.querySelector('canvas')!
+const { canvas, world } = game
 canvas.width = innerWidth * devicePixelRatio
 canvas.height = innerHeight * devicePixelRatio
-
-const game = await createGame({ canvas, plugins: [webgl2({ background: [0.11, 0.09, 0.08, 1] }), input(), devtools()] })
-const { world } = game
 const renderer = game.get(Renderer)
 const camera = game.get(Camera)
 const keys = game.get(Input).keys
 
-const [map, textures, font] = await Promise.all([
-  loadTilemap(game, new URL('./map.tmj', import.meta.url).href),
-  renderer.loadTextures({ walker: [new URL('./walker.png', import.meta.url).href, { frameWidth: 32, frameHeight: 48 }] }),
-  renderer.loadFont({ family: 'ui-monospace, monospace', size: 32, weight: 'bold', chars: '←↑→↓' }),
-])
+const { map, walker: walkerTexture, ui: font } = assets
 
 // The walker joins the blocks layer, and that layer draws in order of each sprite's bottom edge.
 const BLOCKS = Position.z[map.layers.blocks[0]]
@@ -31,7 +25,7 @@ const H = 48
 // 4-frame walk cycle; frame 0 doubles as the idle pose.
 const walker = world.spawn(
   [Position, { x: start.x, y: start.y - H / 2, z: BLOCKS }],
-  [Sprite, { w: W, h: H, texture: textures.walker }],
+  [Sprite, { w: W, h: H, texture: walkerTexture }],
   [Animation, { count: 4, fps: 8 }],
 )
 

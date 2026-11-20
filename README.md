@@ -54,6 +54,29 @@ npm install @dimforge/rapier2d-simd-compat   # only if you use @tlapalli/ollin/r
 
 Ollin ships ES modules with TypeScript types and expects a bundler such as Vite. Rapier's own type definitions need `"skipLibCheck": true` (the Vite templates set it) or `"lib": ["ESNext", "DOM"]` in your `tsconfig.json`.
 
+## Declaring a game
+
+Instead of loading assets by hand, a game can declare them once in a `.ollin` file, one directive per line:
+
+```
+#game(width: 1280, height: 720, background: #1b1b1b, pixelArt: true)
+
+#texture tiles ./art/tiles.png  (frame: 16x16)
+#atlas   hero  ./art/hero.json
+#sound   jump  ./sfx/jump.wav
+#font    ui    (family: "monospace", size: 16)
+#map     level /maps/level.tmj
+```
+
+```ts
+// vite.config.ts: plugins: [ollin()] from '@tlapalli/ollin/vite'
+import { assets, game } from './game.ollin'
+
+game.world.spawn([Position, { x: 100, y: 100 }], [Sprite, assets.hero.sprite('idle 0')], [Animation, assets.hero.tags.run])
+```
+
+The Vite plugin turns the file into a module that creates the game and loads everything in parallel, stops the build with the file and line when a path is wrong, and writes `game.ollin.d.ts` so `assets.hero` is typed. Paths starting with `/` come from `public/` (Tiled maps go there, so their tileset images ship too).
+
 ## Performance
 
 `examples/bench` runs the same bouncing-sprite simulation in Ollin, PixiJS 8.23 and Phaser 4.2.1 on a 1280x720 canvas. PixiJS runs it two ways: one `Sprite` per object in a `Container` (the idiomatic way), and a `ParticleContainer` with only positions dynamic (its fast path, which gives up per-sprite tint, alpha and rotation changes). Phaser runs it with one `Image` per sprite, and with a `SpriteGPULayer` updated with `editMember` every frame.
