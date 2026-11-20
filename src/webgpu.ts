@@ -21,12 +21,14 @@ struct Frame { viewProj: mat4x4f, time: f32, blend: f32, stride: u32 }
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
-struct Grid { cell: vec4f, grid: vec4f } // frame size u, v, step u, v; margin u, v, columns
+struct Grid { cell: vec4f, grid: vec4f } // frame size u, v, step u, v; margin u, v, columns, first atlas texel or -1
 @group(1) @binding(2) var<uniform> grid: Grid;
 // The ECS component arrays, uploaded as they are: one layer of \`stride\` entities per field (see SpriteData).
 @group(2) @binding(0) var<storage, read> floats: array<f32>;
 @group(2) @binding(1) var<storage, read> uints: array<u32>;
 @group(2) @binding(2) var<storage, read> bytes: array<u32>;
+// Atlas frame table, 2 texels per frame (see Backend.frames).
+@group(2) @binding(3) var<storage, read> frames: array<vec4f>;
 
 fn F(layer: u32, e: u32) -> f32 { return floats[layer * frame.stride + e]; }
 fn U(layer: u32, e: u32) -> u32 { return uints[layer * frame.stride + e]; }
@@ -53,14 +55,25 @@ struct Fragment {
     angle = F(9u, e) + (turn - 6.2831853 * round(turn / 6.2831853)) * frame.blend; // shortest way around
   }
   let f = U(0u, e);
-  let columns = u32(grid.grid.z);
-  var uv = grid.grid.xy + vec2f(f32(f % columns), f32(f / columns)) * grid.cell.zw;
-  var cell = grid.cell.xy;
-  // Mirroring is free: start from the far edge of the frame and walk the UVs backwards.
-  if (B(0u, e) != 0u) { uv.x += cell.x; cell.x = -cell.x; }
-  if (B(1u, e) != 0u) { uv.y += cell.y; cell.y = -cell.y; }
+  var uv: vec2f;
+  var cell: vec2f;
+  var trim = vec4f(0.0, 0.0, 1.0, 1.0); // where the frame's pixels sit inside the sprite
+  if (grid.grid.w >= 0.0) {
+    let i = u32(grid.grid.w) + f * 2u;
+    uv = frames[i].xy;
+    cell = frames[i].zw;
+    trim = frames[i + 1u];
+  } else {
+    let columns = u32(grid.grid.z);
+    uv = grid.grid.xy + vec2f(f32(f % columns), f32(f / columns)) * grid.cell.zw;
+    cell = grid.cell.xy;
+  }
+  // Mirroring is free: the corner moves to the other side of the sprite, trimmed frames included.
+  var at01 = trim.xy + corner * trim.zw;
+  if (B(0u, e) != 0u) { at01.x = 1.0 - at01.x; }
+  if (B(1u, e) != 0u) { at01.y = 1.0 - at01.y; }
   let tint = U(1u, e);
-  let local = (corner - 0.5) * vec2f(F(3u, e), F(4u, e));
+  let local = (at01 - 0.5) * vec2f(F(3u, e), F(4u, e));
   let c = cos(angle);
   let n = sin(angle);
   let world = position.xy + vec2f(local.x * c - local.y * n, local.x * n + local.y * c);
@@ -149,9 +162,11 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
     ],
   })
   const storage = { visibility: STAGE_VERTEX, buffer: { type: 'read-only-storage' as const } }
-  const dataLayout = device.createBindGroupLayout({ entries: [0, 1, 2].map((binding) => ({ binding, ...storage })) })
-  const fragment: GPUFragmentState = { module, entryPoint: 'fs', targets: [{ format, blend: { color: blend, alpha: blend } }] }
-  const pipeline = device.createRenderPipeline({
+  const dataLayout = device.createBindGroupLayout({ entries: [0, 1, 2, 3].map((binding) => ({ binding, ...storage })) })
+  // Premultiplied alpha: normal is src + dst * (1 - src alpha); additive is src + dst, and alpha still fades it.
+  const add: GPUBlendComponent = { srcFactor: 'one', dstFactor: 'one' }
+  const fragments = [blend, add].map((b): GPUFragmentState => ({ module, entryPoint: 'fs', targets: [{ format, blend: { color: b, alpha: b } }] }))
+  const [pipeline, additivePipeline] = fragments.map((fragment) => device.createRenderPipeline({
     layout: device.createPipelineLayout({ bindGroupLayouts: [frameLayout, textureLayout, dataLayout] }),
     vertex: {
       module,
@@ -160,8 +175,8 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
     },
     fragment,
     primitive: { topology: 'triangle-strip' },
-  })
-  const particlePipeline = device.createRenderPipeline({
+  }))
+  const [particlePipeline, additiveParticlePipeline] = fragments.map((fragment) => device.createRenderPipeline({
     layout: device.createPipelineLayout({ bindGroupLayouts: [frameLayout, textureLayout] }),
     vertex: {
       module,
@@ -181,7 +196,7 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
     },
     fragment,
     primitive: { topology: 'triangle-strip' },
-  })
+  }))
 
   // Both projections (each with the particle clock, blend and layer stride) live in one uniform buffer; bind group
   // offsets must be 256-byte aligned.
@@ -198,7 +213,7 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
     let group = textureGroups.get(t)
     if (!group) {
       const grid = device.createBuffer({ size: 32, usage: BUFFER_UNIFORM | BUFFER_COPY_DST })
-      device.queue.writeBuffer(grid, 0, new Float32Array([t.fu, t.fv, t.su, t.sv, t.mu, t.mv, t.columns, 0]))
+      device.queue.writeBuffer(grid, 0, new Float32Array([t.fu, t.fv, t.su, t.sv, t.mu, t.mv, t.columns, t.frames]))
       group = device.createBindGroup({
         layout: textureLayout,
         entries: [
@@ -225,8 +240,10 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
   /** The layer stride `dataGroup` was made for. */
   let groupStride = 0
   const pool: GPUBuffer[] = []
-  const draws: { particles?: GPUBuffer; first: number; count: number; texture: GPUBindGroup; screen: boolean }[] = []
+  const draws: { particles?: GPUBuffer; first: number; count: number; texture: GPUBindGroup; screen: boolean; additive: boolean }[] = []
   const params = new ArrayBuffer(8)
+  // Atlas frame table; starts as one zero frame so the binding is never empty.
+  let frameBuffer = device.createBuffer({ size: 32, usage: BUFFER_STORAGE | BUFFER_COPY_DST })
 
   return {
     name: 'webgpu',
@@ -247,6 +264,12 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
       device.queue.writeBuffer(uniforms, 256, screen)
       device.queue.writeBuffer(uniforms, 320, clock)
     },
+    frames(table) {
+      frameBuffer.destroy()
+      frameBuffer = device.createBuffer({ size: Math.max(32, table.byteLength), usage: BUFFER_STORAGE | BUFFER_COPY_DST })
+      device.queue.writeBuffer(frameBuffer, 0, table)
+      groupStride = 0 // rebuild the data bind group with the new buffer
+    },
     sprites(next) {
       data = next
       stride = Math.ceil(next.floats[0].length / LAYER_ALIGN) * LAYER_ALIGN
@@ -255,14 +278,14 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
       device.queue.writeBuffer(uniforms, 68, params)
       device.queue.writeBuffer(uniforms, 324, params)
     },
-    draw(frameIds, count, texture, screen) {
+    draw(frameIds, count, texture, screen, additive) {
       if (used + count > ids.length) {
         const next = new Uint32Array(Math.max(used + count, ids.length * 2))
         next.set(ids.subarray(0, used))
         ids = next
       }
       ids.set(frameIds.subarray(0, count), used)
-      draws.push({ first: used, count, texture: textureGroup(texture), screen })
+      draws.push({ first: used, count, texture: textureGroup(texture), screen, additive })
       used += count
     },
     createParticles(max) {
@@ -271,8 +294,8 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
     writeParticles(buffer, first, particles) {
       device.queue.writeBuffer(buffer, first * FLOATS_PER_PARTICLE * 4, particles)
     },
-    drawParticles(buffer, count, texture, screen) {
-      draws.push({ particles: buffer, first: 0, count, texture: textureGroup(texture), screen })
+    drawParticles(buffer, count, texture, screen, additive) {
+      draws.push({ particles: buffer, first: 0, count, texture: textureGroup(texture), screen, additive })
     },
     end() {
       const encoder = device.createCommandEncoder()
@@ -294,6 +317,7 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
               { binding: 0, resource: { buffer: gpu, offset: 0, size: floatBytes } },
               { binding: 1, resource: { buffer: gpu, offset: floatBytes, size: uintBytes } },
               { binding: 2, resource: { buffer: gpu, offset: floatBytes + uintBytes, size: BYTE_LAYERS * stride } },
+              { binding: 3, resource: { buffer: frameBuffer } },
             ],
           })
           groupStride = stride
@@ -322,10 +346,12 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
       })
       let vertices: GPUBuffer | undefined
       let bound: boolean | undefined
+      let piped: GPURenderPipeline | undefined
       for (const d of draws) {
         const buffer = d.particles ?? gpu!
+        const next = d.particles ? (d.additive ? additiveParticlePipeline : particlePipeline) : d.additive ? additivePipeline : pipeline
+        if (next !== piped) pass.setPipeline((piped = next))
         if (buffer !== vertices) {
-          pass.setPipeline(d.particles ? particlePipeline : pipeline)
           if (d.particles) pass.setVertexBuffer(0, buffer)
           else {
             pass.setVertexBuffer(0, buffer, idsAt)

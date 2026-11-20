@@ -6,9 +6,14 @@
   they are, instead of the CPU packing 11 floats per sprite every frame; batches are reused across frames while no
   sprite is added or removed and no `z` or `texture` changes. 3–4x less main-thread work per frame at 10,000–50,000
   sprites, ahead of PixiJS's ParticleContainer (README, Performance). WebGL2 and WebGPU cost the same.
+- Packed spritesheets: `renderer.loadAtlas(url)` loads Aseprite and TexturePacker JSON (array or hash) with frames of
+  any size, trimming and Aseprite tags as ready-made animations (`[Animation, atlas.tags.run]`,
+  `[Sprite, atlas.sprite('idle 0')]`).
+- Additive layers: `renderer.additive.add(z)` draws that layer's sprites and particles with additive blending, for
+  glows, fire and sparks.
 - `Query.version` changes whenever an entity enters or leaves the query.
-- Breaking for custom renderer backends only: `Backend` gains `sprites(data)`, `draw` takes entity ids, and
-  `FLOATS_PER_SPRITE` is gone.
+- Breaking for custom renderer backends only: `Backend` gains `sprites(data)` and `frames(table)`, `draw` takes
+  entity ids and an additive flag, and `FLOATS_PER_SPRITE` is gone.
 - `examples/bench` adds PixiJS 8 (`pixi.html`, `?mode=particle` for its ParticleContainer).
 
 ## 0.1.0-alpha.1

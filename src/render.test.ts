@@ -22,6 +22,7 @@ const setup = async () => {
     createTexture: () => ({}),
     begin() {},
     end() {},
+    frames() {},
     sprites: (d) => void (data = d),
     // Records the x each sprite is drawn at, the way the shaders compute it from the uploaded component arrays.
     draw: (ids, count) => {

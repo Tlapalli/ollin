@@ -2,6 +2,7 @@ import { Camera, createCamera } from './camera'
 import { animation, Interpolate, Position, Rotation, Sprite } from './components'
 import { token, type Game } from './core'
 import { presence } from './ecs'
+import { parseAtlas, type AtlasTag } from './atlas'
 import { mat4, ortho } from './math'
 import { DEFAULT_CHARS, type Font } from './text'
 
@@ -26,6 +27,12 @@ export interface Renderer {
   readonly backend: 'webgl2' | 'webgpu'
   /** Loads an image and returns its texture id, to be stored in `Sprite.texture`. Cached by URL and options, so restarting a scene reuses it. */
   loadTexture(url: string, options?: TextureOptions): Promise<number>
+  /**
+   * Loads a packed spritesheet: the JSON that Aseprite or TexturePacker export, and its image. Frames can have any
+   * size and be trimmed; tags become ready-made animations. Cached by URL.
+   * `const hero = await renderer.loadAtlas(heroJson)`, then `[Sprite, hero.sprite('idle 0')]` and `[Animation, hero.tags.run]`.
+   */
+  loadAtlas(url: string, options?: AtlasOptions): Promise<Atlas>
   /** Loads several textures in parallel: `const t = await loadTextures({ box: boxUrl })` gives a typed `t.box`. */
   loadTextures<const M extends Record<string, TextureSource>>(manifest: M): Promise<{ [K in keyof M]: number }>
   /**
@@ -40,6 +47,12 @@ export interface Renderer {
    */
   screen: Set<number>
   /**
+   * z layers drawn with additive blending: colors add up and never darken, for glows, fire, magic and sparks
+   * (particles of the layer too). Black adds nothing, so additive art works best on a dark background.
+   * `renderer.additive.add(5)`.
+   */
+  additive: Set<number>
+  /**
    * Renders a font (a CSS family, including web fonts) into a texture for `spawnText`: ASCII, accented Latin letters,
    * ñ, ¿, ¡ and Nahuatl macron vowels, plus `chars`. Glyphs are white so tint colors them. Cached by options.
    */
@@ -51,6 +64,26 @@ export interface Renderer {
   burst(options: BurstOptions): void
   /** Last frame's totals, for profiling (`devtools()` shows them). */
   readonly stats: { drawCalls: number; sprites: number }
+}
+
+/** Options for `renderer.loadAtlas`. */
+export interface AtlasOptions {
+  /** `nearest` keeps pixel art crisp. Default `linear`. */
+  filter?: 'linear' | 'nearest'
+  /** Image URL, when bundling moved it away from the JSON's `meta.image` (the `.ollin` plugin sets it). */
+  image?: string
+}
+
+/** A loaded spritesheet from `renderer.loadAtlas`. Frame names are the ones in the JSON. */
+export interface Atlas {
+  /** Texture id for `Sprite.texture`. */
+  texture: number
+  /** Frame index (`Sprite.frame`) by name. */
+  frames: Record<string, number>
+  /** Aseprite tags as `Animation` values: `[Animation, atlas.tags.run]`. */
+  tags: Record<string, AtlasTag>
+  /** `Sprite` values for a frame: texture, frame and its untrimmed size. Throws for an unknown name. */
+  sprite(name: string): { texture: number; frame: number; w: number; h: number }
 }
 
 /** Options for `renderer.burst`. */
@@ -114,16 +147,21 @@ export interface Backend<T = unknown, P = unknown> {
   createTexture(source: HTMLImageElement | HTMLCanvasElement, filter: 'linear' | 'nearest'): T
   /** Starts a frame; `view` maps world space, `screen` canvas pixels, `time` is the particle clock in seconds. */
   begin(width: number, height: number, view: Float32Array, screen: Float32Array, time: number): void
+  /**
+   * Uploads the atlas frame table: 2 RGBA texels per frame, (u, v, width, height) of its pixels in the image, then
+   * (x, y, width, height) of those pixels inside the untrimmed frame, as fractions of it. Called when an atlas loads.
+   */
+  frames(table: Float32Array): void
   /** Uploads this frame's component arrays (see `SpriteData`) before any `draw`. */
   sprites(data: SpriteData): void
   /** Draws `count` sprites given by entity id. `ids` is reused right after, so upload or copy it now. */
-  draw(ids: Uint32Array, count: number, texture: Texture<T>, screen: boolean): void
+  draw(ids: Uint32Array, count: number, texture: Texture<T>, screen: boolean, additive: boolean): void
   /** A GPU buffer for `max` particles. */
   createParticles(max: number): P
   /** Writes particles (`FLOATS_PER_PARTICLE` floats each) starting at slot `first`. */
   writeParticles(pool: P, first: number, data: Float32Array): void
   /** Draws the first `count` slots of a pool; slots not alive at the frame's time draw nothing. */
-  drawParticles(pool: P, count: number, texture: Texture<T>, screen: boolean): void
+  drawParticles(pool: P, count: number, texture: Texture<T>, screen: boolean, additive: boolean): void
   end(): void
 }
 
@@ -168,6 +206,8 @@ export interface Texture<T = unknown> {
   /** Grid margin. */
   mu: number
   mv: number
+  /** First texel of this texture's frames in the atlas frame table, or -1 for a grid. */
+  frames: number
 }
 
 /** Entity ids for one (z, texture) pair, rebuilt every frame from the ECS. */
@@ -260,6 +300,7 @@ export function createRenderer(game: Game, backend: Backend) {
   const sortedLayers = new Map<number, SortedLayer>()
   const ySort = new Set<number>()
   const screen = new Set<number>()
+  const additive = new Set<number>()
   const scratch = newBatch()
   const stats = { drawCalls: 0, sprites: 0 }
   const camera = createCamera(game.canvas.width, game.canvas.height)
@@ -326,7 +367,49 @@ export function createRenderer(game: Game, backend: Backend) {
     return createTexture(img, options)
   }
 
-  const createTexture = (img: HTMLImageElement | HTMLCanvasElement, options: TextureOptions) => {
+  // Atlas frame table, shared by every atlas (see Backend.frames).
+  let frameTable = new Float32Array(0)
+  let frameTexels = 0
+
+  const atlases = new Map<string, Promise<Atlas>>()
+  const loadAtlas: Renderer['loadAtlas'] = (url, options = {}) => {
+    const key = `${url} ${JSON.stringify(options)}`
+    let atlas = atlases.get(key)
+    if (!atlas) atlases.set(key, (atlas = uploadAtlas(url, options)))
+    atlas.catch(() => atlases.delete(key))
+    return atlas
+  }
+
+  const uploadAtlas = async (url: string, options: AtlasOptions): Promise<Atlas> => {
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`Could not load atlas ${url}: ${response.status}`)
+    const data = parseAtlas(await response.json())
+    const img = new Image()
+    img.src = options.image ?? new URL(data.image, new URL(url, location.href)).href
+    await img.decode()
+    const { width: W, height: H } = img
+    const base = frameTexels
+    frameTable = grow(frameTable, (frameTexels + data.frames.length * 2) * 4)
+    for (const f of data.frames) {
+      frameTable.set([f.x / W, f.y / H, f.w / W, f.h / H, f.offsetX / f.sourceW, f.offsetY / f.sourceH, f.w / f.sourceW, f.h / f.sourceH], frameTexels * 4)
+      frameTexels += 2
+    }
+    backend.frames(frameTable.subarray(0, frameTexels * 4))
+    const texture = createTexture(img, { filter: options.filter }, base)
+    const frames = Object.fromEntries(data.frames.map((f, i) => [f.name, i]))
+    return {
+      texture,
+      frames,
+      tags: data.tags,
+      sprite(name) {
+        const frame = frames[name]
+        if (frame === undefined) throw new Error(`No frame "${name}" in ${url}`)
+        return { texture, frame, w: data.frames[frame].sourceW, h: data.frames[frame].sourceH }
+      },
+    }
+  }
+
+  const createTexture = (img: HTMLImageElement | HTMLCanvasElement, options: TextureOptions, frames = -1) => {
     const { width, height } = img
     const { frameWidth = width, frameHeight = height, margin = 0, spacing = 0 } = options
     return (
@@ -339,6 +422,7 @@ export function createRenderer(game: Game, backend: Backend) {
         sv: (frameHeight + spacing) / height,
         mu: margin / width,
         mv: margin / height,
+        frames,
       }) - 1
     )
   }
@@ -376,6 +460,7 @@ export function createRenderer(game: Game, backend: Backend) {
   game.set(Renderer, {
     backend: backend.name,
     loadTexture,
+    loadAtlas,
     async loadTextures(manifest) {
       const entries = Object.entries(manifest as Record<string, TextureSource>)
       const ids = await Promise.all(entries.map(([, source]) => (typeof source === 'string' ? loadTexture(source) : loadTexture(...source))))
@@ -383,6 +468,7 @@ export function createRenderer(game: Game, backend: Backend) {
     },
     ySort,
     screen,
+    additive,
     stats,
     burst,
     loadFont(options = {}) {
@@ -440,8 +526,9 @@ export function createRenderer(game: Game, backend: Backend) {
   }
 
   let onScreen = false
+  let adding = false
   const draw = (b: Batch, texture: number) => {
-    backend.draw(b.ids, b.count, textures[texture], onScreen)
+    backend.draw(b.ids, b.count, textures[texture], onScreen, adding)
     stats.drawCalls++
     stats.sprites += b.count
   }
@@ -570,6 +657,7 @@ export function createRenderer(game: Game, backend: Backend) {
     const live = [...pools.values()].filter((p) => p.until > time)
     for (const zKey of [...new Set([...layers.keys(), ...sortedLayers.keys(), ...live.map((p) => p.z)])].sort((a, b) => a - b)) {
       onScreen = screen.has(zKey)
+      adding = additive.has(zKey)
       const layer = sortedLayers.get(zKey)
       if (layer) {
         if (layer.count) drawSorted(layer)
@@ -589,7 +677,7 @@ export function createRenderer(game: Game, backend: Backend) {
       }
       for (const pool of live) {
         if (pool.z !== zKey) continue
-        backend.drawParticles(pool.handle, pool.used, textures[pool.texture], onScreen)
+        backend.drawParticles(pool.handle, pool.used, textures[pool.texture], onScreen, adding)
         stats.drawCalls++
       }
     }

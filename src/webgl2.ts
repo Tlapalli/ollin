@@ -16,13 +16,15 @@ uniform usampler2DArray u_uints;
 uniform usampler2DArray u_bytes;
 uniform float u_blend;
 uniform vec4 u_cell; // frame size u, v; step u, v
-uniform vec3 u_grid; // margin u, v; columns
+uniform vec4 u_grid; // margin u, v; columns; first atlas texel, or -1 for a grid
+uniform highp sampler2D u_frames; // atlas frame table, 2 texels per frame (see Backend.frames)
 out vec2 v_uv;
 out vec4 v_tint;
 ivec2 at;
 float F(int layer) { return texelFetch(u_floats, ivec3(at, layer), 0).r; }
 uint U(int layer) { return texelFetch(u_uints, ivec3(at, layer), 0).r; }
 uint B(int layer) { return texelFetch(u_bytes, ivec3(at, layer), 0).r; }
+vec4 frameTexel(int i) { return texelFetch(u_frames, ivec2(i & 1023, i >> 10), 0); }
 void main() {
   at = ivec2(int(a_entity & 1023u), int(a_entity >> 10u));
   vec3 position = vec3(F(0), F(1), F(2));
@@ -33,16 +35,28 @@ void main() {
     angle = F(9) + (turn - 6.2831853 * round(turn / 6.2831853)) * u_blend; // shortest way around
   }
   uint frame = U(0);
-  uint columns = uint(u_grid.z);
-  vec2 uv = u_grid.xy + vec2(float(frame % columns), float(frame / columns)) * u_cell.zw;
-  vec2 cell = u_cell.xy;
-  // Mirroring is free: start from the far edge of the frame and walk the UVs backwards.
-  if (B(0) != 0u) { uv.x += cell.x; cell.x = -cell.x; }
-  if (B(1) != 0u) { uv.y += cell.y; cell.y = -cell.y; }
+  vec2 uv;
+  vec2 cell;
+  vec4 trim = vec4(0.0, 0.0, 1.0, 1.0); // where the frame's pixels sit inside the sprite
+  if (u_grid.w >= 0.0) {
+    int i = int(u_grid.w) + int(frame) * 2;
+    vec4 r = frameTexel(i);
+    uv = r.xy;
+    cell = r.zw;
+    trim = frameTexel(i + 1);
+  } else {
+    uint columns = uint(u_grid.z);
+    uv = u_grid.xy + vec2(float(frame % columns), float(frame / columns)) * u_cell.zw;
+    cell = u_cell.xy;
+  }
   v_uv = uv + a_corner * cell;
+  // Mirroring is free: the corner moves to the other side of the sprite, trimmed frames included.
+  vec2 at01 = trim.xy + a_corner * trim.zw;
+  if (B(0) != 0u) at01.x = 1.0 - at01.x;
+  if (B(1) != 0u) at01.y = 1.0 - at01.y;
   uint tint = U(1);
   v_tint = vec4(vec3(uvec3(tint >> 16u, tint >> 8u, tint) & 255u) / 255.0, clamp(F(6), 0.0, 1.0));
-  vec2 local = (a_corner - 0.5) * vec2(F(3), F(4));
+  vec2 local = (at01 - 0.5) * vec2(F(3), F(4));
   float c = cos(angle), s = sin(angle);
   vec2 world = position.xy + vec2(local.x * c - local.y * s, local.x * s + local.y * c);
   gl_Position = u_viewProj * vec4(world, position.z, 1.0);
@@ -119,6 +133,22 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
   gl.uniform1i(gl.getUniformLocation(program, 'u_floats'), 1)
   gl.uniform1i(gl.getUniformLocation(program, 'u_uints'), 2)
   gl.uniform1i(gl.getUniformLocation(program, 'u_bytes'), 3)
+  gl.uniform1i(gl.getUniformLocation(program, 'u_frames'), 4)
+  // Atlas frame table: RGBA32F, 1024 texels per row. Starts as one texel so the sampler is always complete.
+  const frameTexture = gl.createTexture()
+  const uploadFrames = (table: Float32Array, texels: number) => {
+    const rows = Math.max(1, Math.ceil(texels / 1024))
+    const full = new Float32Array(rows * 1024 * 4)
+    full.set(table)
+    gl.activeTexture(gl.TEXTURE4)
+    gl.bindTexture(gl.TEXTURE_2D, frameTexture)
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 1024, rows, 0, gl.RGBA, gl.FLOAT, full)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    gl.activeTexture(gl.TEXTURE0)
+  }
+  uploadFrames(new Float32Array(0), 0)
   const particleProgram = link(gl, PARTICLE_VERT, FRAG)
   const uParticleViewProj = gl.getUniformLocation(particleProgram, 'u_viewProj')
   const uTime = gl.getUniformLocation(particleProgram, 'u_time')
@@ -175,7 +205,11 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
   }
 
   gl.enable(gl.BLEND)
-  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+  // Premultiplied alpha: normal is src + dst * (1 - src alpha); additive is src + dst, and alpha still fades it.
+  let adding: boolean | undefined
+  const blend = (additive: boolean) => {
+    if (additive !== adding) gl.blendFunc(gl.ONE, (adding = additive) ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA)
+  }
 
   let view: Float32Array
   let screen: Float32Array
@@ -208,6 +242,9 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
       gl.clearColor(...background)
       gl.clear(gl.COLOR_BUFFER_BIT)
     },
+    frames(table) {
+      uploadFrames(table, table.length / 4)
+    },
     sprites({ count, blend, floats, uints, bytes }) {
       // 3D uploads from arrays reject the premultiply flag that image uploads set.
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
@@ -221,7 +258,8 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
       gl.uniform1f(uBlend, blend)
       sprites = false
     },
-    draw(ids, count, texture, onScreen) {
+    draw(ids, count, texture, onScreen, additive) {
+      blend(additive)
       if (!sprites) {
         gl.useProgram(program)
         gl.bindVertexArray(vao)
@@ -233,7 +271,7 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
       if (proj !== bound) gl.uniformMatrix4fv(uViewProj, false, (bound = proj))
       gl.bufferData(gl.ARRAY_BUFFER, ids.subarray(0, count), gl.STREAM_DRAW)
       gl.uniform4f(uCell, texture.fu, texture.fv, texture.su, texture.sv)
-      gl.uniform3f(uGrid, texture.mu, texture.mv, texture.columns)
+      gl.uniform4f(uGrid, texture.mu, texture.mv, texture.columns, texture.frames)
       gl.bindTexture(gl.TEXTURE_2D, texture.handle)
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count)
     },
@@ -263,7 +301,8 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
       gl.bufferSubData(gl.ARRAY_BUFFER, first * FLOATS_PER_PARTICLE * 4, data)
       sprites = false
     },
-    drawParticles(pool, count, texture, onScreen) {
+    drawParticles(pool, count, texture, onScreen, additive) {
+      blend(additive)
       gl.useProgram(particleProgram)
       gl.uniformMatrix4fv(uParticleViewProj, false, onScreen ? screen : view)
       gl.uniform1f(uTime, time)
