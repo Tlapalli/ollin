@@ -1,5 +1,5 @@
 import type { Plugin } from './core'
-import { createRenderer, FLOATS_PER_PARTICLE, FLOATS_PER_SPRITE, type Backend, type RendererOptions } from './render'
+import { createRenderer, FLOATS_PER_PARTICLE, type Backend, type RendererOptions, type SpriteData, type Texture } from './render'
 import { webgl2 } from './webgl2'
 
 // GPUBufferUsage / GPUTextureUsage flags from the spec; TypeScript's DOM lib has the WebGPU types but not these globals.
@@ -9,6 +9,7 @@ const BUFFER_COPY_SRC = 0x4
 const BUFFER_COPY_DST = 0x8
 const BUFFER_VERTEX = 0x20
 const BUFFER_UNIFORM = 0x40
+const BUFFER_STORAGE = 0x80
 const TEXTURE_COPY_DST = 0x2
 const TEXTURE_BINDING = 0x4
 const TEXTURE_RENDER_ATTACHMENT = 0x10
@@ -16,18 +17,22 @@ const STAGE_VERTEX = 0x1
 const STAGE_FRAGMENT = 0x2
 
 const SHADER = /* wgsl */ `
-struct Frame { viewProj: mat4x4f, time: f32 }
+struct Frame { viewProj: mat4x4f, time: f32, blend: f32, stride: u32 }
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
+struct Grid { cell: vec4f, grid: vec4f } // frame size u, v, step u, v; margin u, v, columns
+@group(1) @binding(2) var<uniform> grid: Grid;
+// The ECS component arrays, uploaded as they are: one layer of \`stride\` entities per field (see SpriteData).
+@group(2) @binding(0) var<storage, read> floats: array<f32>;
+@group(2) @binding(1) var<storage, read> uints: array<u32>;
+@group(2) @binding(2) var<storage, read> bytes: array<u32>;
 
-struct Sprite {
-  @builtin(vertex_index) vertex: u32,
-  @location(0) position: vec3f,
-  @location(1) size: vec2f,
-  @location(2) angle: f32,
-  @location(3) uv: vec4f,
-  @location(4) tint: vec4f,
+fn F(layer: u32, e: u32) -> f32 { return floats[layer * frame.stride + e]; }
+fn U(layer: u32, e: u32) -> u32 { return uints[layer * frame.stride + e]; }
+fn B(layer: u32, e: u32) -> u32 {
+  let i = layer * frame.stride + e;
+  return (bytes[i >> 2u] >> ((i & 3u) * 8u)) & 255u;
 }
 
 struct Fragment {
@@ -36,19 +41,35 @@ struct Fragment {
   @location(1) tint: vec4f,
 }
 
-@vertex fn vs(s: Sprite) -> Fragment {
+// Sprites arrive as entity ids; everything else is read from the component arrays.
+@vertex fn vs(@builtin(vertex_index) vertex: u32, @location(0) e: u32) -> Fragment {
   // Quad corners from the vertex index (triangle strip), so no quad buffer is needed.
-  let corner = vec2f(f32(s.vertex & 1u), f32(s.vertex >> 1u));
-  let local = (corner - 0.5) * s.size;
-  let c = cos(s.angle);
-  let n = sin(s.angle);
-  let world = s.position.xy + vec2f(local.x * c - local.y * n, local.x * n + local.y * c);
+  let corner = vec2f(f32(vertex & 1u), f32(vertex >> 1u));
+  var position = vec3f(F(0u, e), F(1u, e), F(2u, e));
+  var angle = select(0.0, F(5u, e), B(2u, e) == 1u);
+  if (frame.blend >= 0.0 && B(3u, e) != 0u && B(4u, e) == 1u) {
+    position = vec3f(mix(vec2f(F(7u, e), F(8u, e)), position.xy, frame.blend), position.z);
+    let turn = angle - F(9u, e);
+    angle = F(9u, e) + (turn - 6.2831853 * round(turn / 6.2831853)) * frame.blend; // shortest way around
+  }
+  let f = U(0u, e);
+  let columns = u32(grid.grid.z);
+  var uv = grid.grid.xy + vec2f(f32(f % columns), f32(f / columns)) * grid.cell.zw;
+  var cell = grid.cell.xy;
+  // Mirroring is free: start from the far edge of the frame and walk the UVs backwards.
+  if (B(0u, e) != 0u) { uv.x += cell.x; cell.x = -cell.x; }
+  if (B(1u, e) != 0u) { uv.y += cell.y; cell.y = -cell.y; }
+  let tint = U(1u, e);
+  let local = (corner - 0.5) * vec2f(F(3u, e), F(4u, e));
+  let c = cos(angle);
+  let n = sin(angle);
+  let world = position.xy + vec2f(local.x * c - local.y * n, local.x * n + local.y * c);
   var out: Fragment;
-  out.position = frame.viewProj * vec4f(world, s.position.z, 1.0);
+  out.position = frame.viewProj * vec4f(world, position.z, 1.0);
   // The shared ortho matrix targets WebGL's -1..1 depth range; WebGPU clips to 0..1.
   out.position.z = out.position.z * 0.5 + 0.5;
-  out.uv = s.uv.xy + corner * s.uv.zw;
-  out.tint = s.tint;
+  out.uv = uv + corner * cell;
+  out.tint = vec4f(vec3f(vec3u(tint >> 16u, tint >> 8u, tint) & vec3u(255u)) / 255.0, clamp(F(6u, e), 0.0, 1.0));
   return out;
 }
 
@@ -97,7 +118,20 @@ export const webgpu =
     createRenderer(game, webgpuBackend(game.canvas, device, options.background ?? [0.1, 0.1, 0.1, 1]))
   }
 
-function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background: [number, number, number, number]): Backend<GPUBindGroup, GPUBuffer> {
+/** A texture's view and sampler; the bind group (with the frame grid) is made on first draw. */
+interface GpuTexture {
+  view: GPUTextureView
+  sampler: GPUSampler
+}
+
+// Component layers start at multiples of this many entities, so every layer (bytes included) is 256-byte aligned.
+const LAYER_ALIGN = 64
+// Layer counts per type, as in SpriteData.
+const FLOAT_LAYERS = 10
+const UINT_LAYERS = 2
+const BYTE_LAYERS = 5
+
+function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background: [number, number, number, number]): Backend<GpuTexture, GPUBuffer> {
   const context = canvas.getContext('webgpu') as GPUCanvasContext | null
   if (!context) throw new Error('WebGPU canvas context is not available')
   const format = navigator.gpu.getPreferredCanvasFormat()
@@ -111,34 +145,24 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
     entries: [
       { binding: 0, visibility: STAGE_FRAGMENT, texture: {} },
       { binding: 1, visibility: STAGE_FRAGMENT, sampler: {} },
+      { binding: 2, visibility: STAGE_VERTEX, buffer: {} },
     ],
   })
-  const layout = device.createPipelineLayout({ bindGroupLayouts: [frameLayout, textureLayout] })
+  const storage = { visibility: STAGE_VERTEX, buffer: { type: 'read-only-storage' as const } }
+  const dataLayout = device.createBindGroupLayout({ entries: [0, 1, 2].map((binding) => ({ binding, ...storage })) })
   const fragment: GPUFragmentState = { module, entryPoint: 'fs', targets: [{ format, blend: { color: blend, alpha: blend } }] }
   const pipeline = device.createRenderPipeline({
-    layout,
+    layout: device.createPipelineLayout({ bindGroupLayouts: [frameLayout, textureLayout, dataLayout] }),
     vertex: {
       module,
       entryPoint: 'vs',
-      buffers: [
-        {
-          arrayStride: FLOATS_PER_SPRITE * 4,
-          stepMode: 'instance',
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x2' },
-            { shaderLocation: 2, offset: 20, format: 'float32' },
-            { shaderLocation: 3, offset: 24, format: 'float32x4' },
-            { shaderLocation: 4, offset: 40, format: 'unorm8x4' },
-          ],
-        },
-      ],
+      buffers: [{ arrayStride: 4, stepMode: 'instance', attributes: [{ shaderLocation: 0, offset: 0, format: 'uint32' }] }],
     },
     fragment,
     primitive: { topology: 'triangle-strip' },
   })
   const particlePipeline = device.createRenderPipeline({
-    layout,
+    layout: device.createPipelineLayout({ bindGroupLayouts: [frameLayout, textureLayout] }),
     vertex: {
       module,
       entryPoint: 'particle',
@@ -159,7 +183,8 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
     primitive: { topology: 'triangle-strip' },
   })
 
-  // Both projections (each with the particle clock) live in one uniform buffer; bind group offsets must be 256-byte aligned.
+  // Both projections (each with the particle clock, blend and layer stride) live in one uniform buffer; bind group
+  // offsets must be 256-byte aligned.
   const uniforms = device.createBuffer({ size: 512, usage: BUFFER_UNIFORM | BUFFER_COPY_DST })
   const projection = (offset: number) => device.createBindGroup({ layout: frameLayout, entries: [{ binding: 0, resource: { buffer: uniforms, offset, size: 80 } }] })
   const viewGroup = projection(0)
@@ -168,16 +193,40 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
     linear: device.createSampler({ minFilter: 'linear', magFilter: 'linear' }),
     nearest: device.createSampler({ minFilter: 'nearest', magFilter: 'nearest' }),
   }
+  const textureGroups = new WeakMap<object, GPUBindGroup>()
+  const textureGroup = (t: Texture<GpuTexture>) => {
+    let group = textureGroups.get(t)
+    if (!group) {
+      const grid = device.createBuffer({ size: 32, usage: BUFFER_UNIFORM | BUFFER_COPY_DST })
+      device.queue.writeBuffer(grid, 0, new Float32Array([t.fu, t.fv, t.su, t.sv, t.mu, t.mv, t.columns, 0]))
+      group = device.createBindGroup({
+        layout: textureLayout,
+        entries: [
+          { binding: 0, resource: t.handle.view },
+          { binding: 1, resource: t.handle.sampler },
+          { binding: 2, resource: { buffer: grid } },
+        ],
+      })
+      textureGroups.set(t, group)
+    }
+    return group
+  }
 
-  // Draws are recorded and run at submit, so the frame's batches are gathered into one array, then written into a
-  // mapped staging buffer (shared memory, no copy through writeBuffer) that the GPU copies into the vertex buffer.
-  // Each draw picks its slice with firstInstance. Staging buffers return to the pool once remapped.
-  let frame = new Float32Array(1024 * FLOATS_PER_SPRITE)
+  // Draws are recorded and run at submit. Each frame, the component layers and the frame's sprite ids are written into
+  // a mapped staging buffer (shared memory; queue.writeBuffer cost ~0.9 ms of main thread per MB) that the GPU copies
+  // into one buffer used both as storage (layers) and as the instance buffer (ids, after the layers).
+  // Each draw picks its ids with firstInstance. Staging buffers return to the pool once remapped.
+  let data: SpriteData | undefined
+  let stride = 0
+  let ids = new Uint32Array(4096)
   let used = 0
-  let instances: GPUBuffer | undefined
+  let gpu: GPUBuffer | undefined
+  let dataGroup: GPUBindGroup | undefined
+  /** The layer stride `dataGroup` was made for. */
+  let groupStride = 0
   const pool: GPUBuffer[] = []
-  /** Sprite draws index `instances`; particle draws carry their pool's buffer. */
   const draws: { particles?: GPUBuffer; first: number; count: number; texture: GPUBindGroup; screen: boolean }[] = []
+  const params = new ArrayBuffer(8)
 
   return {
     name: 'webgpu',
@@ -189,13 +238,7 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
         usage: TEXTURE_BINDING | TEXTURE_COPY_DST | TEXTURE_RENDER_ATTACHMENT,
       })
       device.queue.copyExternalImageToTexture({ source: img }, { texture, premultipliedAlpha: true }, size)
-      return device.createBindGroup({
-        layout: textureLayout,
-        entries: [
-          { binding: 0, resource: texture.createView() },
-          { binding: 1, resource: samplers[filter] },
-        ],
-      })
+      return { view: texture.createView(), sampler: samplers[filter] }
     },
     begin(_width, _height, view, screen, time) {
       const clock = new Float32Array([time])
@@ -204,41 +247,75 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
       device.queue.writeBuffer(uniforms, 256, screen)
       device.queue.writeBuffer(uniforms, 320, clock)
     },
-    draw(data, count, texture, screen) {
-      const n = count * FLOATS_PER_SPRITE
-      if (used + n > frame.length) {
-        const next = new Float32Array(Math.max(used + n, frame.length * 2))
-        next.set(frame.subarray(0, used))
-        frame = next
+    sprites(next) {
+      data = next
+      stride = Math.ceil(next.floats[0].length / LAYER_ALIGN) * LAYER_ALIGN
+      new Float32Array(params, 0, 1)[0] = next.blend
+      new Uint32Array(params, 4, 1)[0] = stride
+      device.queue.writeBuffer(uniforms, 68, params)
+      device.queue.writeBuffer(uniforms, 324, params)
+    },
+    draw(frameIds, count, texture, screen) {
+      if (used + count > ids.length) {
+        const next = new Uint32Array(Math.max(used + count, ids.length * 2))
+        next.set(ids.subarray(0, used))
+        ids = next
       }
-      frame.set(data.subarray(0, n), used)
-      draws.push({ first: used / FLOATS_PER_SPRITE, count, texture, screen })
-      used += n
+      ids.set(frameIds.subarray(0, count), used)
+      draws.push({ first: used, count, texture: textureGroup(texture), screen })
+      used += count
     },
     createParticles(max) {
       return device.createBuffer({ size: max * FLOATS_PER_PARTICLE * 4, usage: BUFFER_VERTEX | BUFFER_COPY_DST })
     },
-    writeParticles(buffer, first, data) {
-      device.queue.writeBuffer(buffer, first * FLOATS_PER_PARTICLE * 4, data)
+    writeParticles(buffer, first, particles) {
+      device.queue.writeBuffer(buffer, first * FLOATS_PER_PARTICLE * 4, particles)
     },
     drawParticles(buffer, count, texture, screen) {
-      draws.push({ particles: buffer, first: 0, count, texture, screen })
+      draws.push({ particles: buffer, first: 0, count, texture: textureGroup(texture), screen })
     },
     end() {
-      const bytes = used * 4
       const encoder = device.createCommandEncoder()
+      // Layout: float layers, uint layers, byte layers (each `stride` entities), then the ids.
+      const floatBytes = FLOAT_LAYERS * stride * 4
+      const uintBytes = UINT_LAYERS * stride * 4
+      const idsAt = floatBytes + uintBytes + BYTE_LAYERS * stride
+      const bytes = idsAt + used * 4
       let staging: GPUBuffer | undefined
-      if (used) {
-        if (!instances || instances.size < bytes) {
-          instances?.destroy()
-          instances = device.createBuffer({ size: Math.max(bytes, (instances?.size ?? 0) * 2), usage: BUFFER_VERTEX | BUFFER_COPY_DST })
+      if (used && data) {
+        if (!gpu || gpu.size < bytes || groupStride !== stride) {
+          if (!gpu || gpu.size < bytes) {
+            gpu?.destroy()
+            gpu = device.createBuffer({ size: Math.max(bytes, (gpu?.size ?? 0) * 2), usage: BUFFER_STORAGE | BUFFER_VERTEX | BUFFER_COPY_DST })
+          }
+          dataGroup = device.createBindGroup({
+            layout: dataLayout,
+            entries: [
+              { binding: 0, resource: { buffer: gpu, offset: 0, size: floatBytes } },
+              { binding: 1, resource: { buffer: gpu, offset: floatBytes, size: uintBytes } },
+              { binding: 2, resource: { buffer: gpu, offset: floatBytes + uintBytes, size: BYTE_LAYERS * stride } },
+            ],
+          })
+          groupStride = stride
         }
         // Too-small pooled buffers are dropped; the pool settles on the frame's size.
         while (pool.length && pool[pool.length - 1].size < bytes) pool.pop()!.destroy()
-        staging = pool.pop() ?? device.createBuffer({ size: instances.size, usage: BUFFER_MAP_WRITE | BUFFER_COPY_SRC, mappedAtCreation: true })
-        new Float32Array(staging.getMappedRange(0, bytes)).set(frame.subarray(0, used))
+        staging = pool.pop() ?? device.createBuffer({ size: gpu.size, usage: BUFFER_MAP_WRITE | BUFFER_COPY_SRC, mappedAtCreation: true })
+        const mapped = new Uint8Array(staging.getMappedRange(0, bytes))
+        const { count, blend, floats, uints, bytes: flags } = data
+        // Interpolate layers (the last ones) are only read when something interpolates.
+        const write = (arrays: ArrayBufferView[], layers: number, at: number, size: number) => {
+          for (let l = 0; l < layers; l++) {
+            const a = arrays[l]
+            mapped.set(new Uint8Array(a.buffer, a.byteOffset, count * size), at + l * stride * size)
+          }
+        }
+        write(floats, blend >= 0 ? FLOAT_LAYERS : FLOAT_LAYERS - 3, 0, 4)
+        write(uints, UINT_LAYERS, floatBytes, 4)
+        write(flags, blend >= 0 ? BYTE_LAYERS : BYTE_LAYERS - 2, floatBytes + uintBytes, 1)
+        new Uint32Array(mapped.buffer, idsAt, used).set(ids.subarray(0, used))
         staging.unmap()
-        encoder.copyBufferToBuffer(staging, 0, instances, 0, bytes)
+        encoder.copyBufferToBuffer(staging, 0, gpu, 0, bytes)
       }
       const pass = encoder.beginRenderPass({
         colorAttachments: [{ view: context.getCurrentTexture().createView(), clearValue: background, loadOp: 'clear', storeOp: 'store' }],
@@ -246,10 +323,15 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
       let vertices: GPUBuffer | undefined
       let bound: boolean | undefined
       for (const d of draws) {
-        const buffer = d.particles ?? instances!
+        const buffer = d.particles ?? gpu!
         if (buffer !== vertices) {
           pass.setPipeline(d.particles ? particlePipeline : pipeline)
-          pass.setVertexBuffer(0, (vertices = buffer))
+          if (d.particles) pass.setVertexBuffer(0, buffer)
+          else {
+            pass.setVertexBuffer(0, buffer, idsAt)
+            pass.setBindGroup(2, dataGroup!)
+          }
+          vertices = buffer
         }
         if (d.screen !== bound) pass.setBindGroup(0, (bound = d.screen) ? screenGroup : viewGroup)
         pass.setBindGroup(1, d.texture)

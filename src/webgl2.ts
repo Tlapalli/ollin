@@ -1,23 +1,51 @@
 import type { Plugin } from './core'
-import { createRenderer, FLOATS_PER_PARTICLE, FLOATS_PER_SPRITE, type Backend, type RendererOptions } from './render'
+import { createRenderer, FLOATS_PER_PARTICLE, type Backend, type RendererOptions } from './render'
 
+// Sprites arrive as entity ids; the shader reads their components straight from the ECS arrays, uploaded as they are
+// into texture array layers (1024 entities per row, one layer per field; see SpriteData for the order).
 const VERT = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2DArray;
+precision highp usampler2DArray;
 layout(location = 0) in vec2 a_corner;
-layout(location = 1) in vec3 a_position;
-layout(location = 2) in vec2 a_size;
-layout(location = 3) in float a_angle;
-layout(location = 4) in vec4 a_uv;
-layout(location = 5) in vec4 a_tint;
+layout(location = 1) in uint a_entity;
 uniform mat4 u_viewProj;
+uniform sampler2DArray u_floats;
+uniform usampler2DArray u_uints;
+uniform usampler2DArray u_bytes;
+uniform float u_blend;
+uniform vec4 u_cell; // frame size u, v; step u, v
+uniform vec3 u_grid; // margin u, v; columns
 out vec2 v_uv;
 out vec4 v_tint;
+ivec2 at;
+float F(int layer) { return texelFetch(u_floats, ivec3(at, layer), 0).r; }
+uint U(int layer) { return texelFetch(u_uints, ivec3(at, layer), 0).r; }
+uint B(int layer) { return texelFetch(u_bytes, ivec3(at, layer), 0).r; }
 void main() {
-  v_uv = a_uv.xy + a_corner * a_uv.zw;
-  v_tint = a_tint;
-  vec2 local = (a_corner - 0.5) * a_size;
-  float c = cos(a_angle), s = sin(a_angle);
-  vec2 world = a_position.xy + vec2(local.x * c - local.y * s, local.x * s + local.y * c);
-  gl_Position = u_viewProj * vec4(world, a_position.z, 1.0);
+  at = ivec2(int(a_entity & 1023u), int(a_entity >> 10u));
+  vec3 position = vec3(F(0), F(1), F(2));
+  float angle = B(2) == 1u ? F(5) : 0.0;
+  if (u_blend >= 0.0 && B(3) != 0u && B(4) == 1u) {
+    position.xy = mix(vec2(F(7), F(8)), position.xy, u_blend);
+    float turn = angle - F(9);
+    angle = F(9) + (turn - 6.2831853 * round(turn / 6.2831853)) * u_blend; // shortest way around
+  }
+  uint frame = U(0);
+  uint columns = uint(u_grid.z);
+  vec2 uv = u_grid.xy + vec2(float(frame % columns), float(frame / columns)) * u_cell.zw;
+  vec2 cell = u_cell.xy;
+  // Mirroring is free: start from the far edge of the frame and walk the UVs backwards.
+  if (B(0) != 0u) { uv.x += cell.x; cell.x = -cell.x; }
+  if (B(1) != 0u) { uv.y += cell.y; cell.y = -cell.y; }
+  v_uv = uv + a_corner * cell;
+  uint tint = U(1);
+  v_tint = vec4(vec3(uvec3(tint >> 16u, tint >> 8u, tint) & 255u) / 255.0, clamp(F(6), 0.0, 1.0));
+  vec2 local = (a_corner - 0.5) * vec2(F(3), F(4));
+  float c = cos(angle), s = sin(angle);
+  vec2 world = position.xy + vec2(local.x * c - local.y * s, local.x * s + local.y * c);
+  gl_Position = u_viewProj * vec4(world, position.z, 1.0);
 }`
 
 // Particles move and fade in the shader from their birth data, so the CPU never touches them after a burst.
@@ -84,6 +112,13 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
 
   const program = link(gl, VERT, FRAG)
   const uViewProj = gl.getUniformLocation(program, 'u_viewProj')
+  const uBlend = gl.getUniformLocation(program, 'u_blend')
+  const uCell = gl.getUniformLocation(program, 'u_cell')
+  const uGrid = gl.getUniformLocation(program, 'u_grid')
+  gl.useProgram(program)
+  gl.uniform1i(gl.getUniformLocation(program, 'u_floats'), 1)
+  gl.uniform1i(gl.getUniformLocation(program, 'u_uints'), 2)
+  gl.uniform1i(gl.getUniformLocation(program, 'u_bytes'), 3)
   const particleProgram = link(gl, PARTICLE_VERT, FRAG)
   const uParticleViewProj = gl.getUniformLocation(particleProgram, 'u_viewProj')
   const uTime = gl.getUniformLocation(particleProgram, 'u_time')
@@ -98,21 +133,46 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
   const instances = gl.createBuffer()
   gl.bindBuffer(gl.ARRAY_BUFFER, instances)
-  const stride = FLOATS_PER_SPRITE * 4
-  const attributes: [location: number, size: number, offset: number][] = [
-    [1, 3, 0],
-    [2, 2, 12],
-    [3, 1, 20],
-    [4, 4, 24],
-  ]
-  for (const [location, size, offset] of attributes) {
-    gl.enableVertexAttribArray(location)
-    gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride, offset)
-    gl.vertexAttribDivisor(location, 1)
+  gl.enableVertexAttribArray(1)
+  gl.vertexAttribIPointer(1, 1, gl.UNSIGNED_INT, 4, 0)
+  gl.vertexAttribDivisor(1, 1)
+
+  // Component data: one texture array per type, one layer per field, 1024 entities per row.
+  const kinds = [
+    { unit: 1, internal: gl.R32F, format: gl.RED, type: gl.FLOAT },
+    { unit: 2, internal: gl.R32UI, format: gl.RED_INTEGER, type: gl.UNSIGNED_INT },
+    { unit: 3, internal: gl.R8UI, format: gl.RED_INTEGER, type: gl.UNSIGNED_BYTE },
+  ].map((k) => ({ ...k, texture: null as WebGLTexture | null, rows: 0, layers: 0 }))
+  const unpack = gl.createBuffer()
+  const upload = (kind: (typeof kinds)[number], arrays: ArrayBufferView[], count: number, layers: number) => {
+    // ponytail: rows grow with capacity; past ~2M entities (2048 rows) split into more textures
+    const rows = Math.ceil((arrays[0] as Uint8Array).length / 1024)
+    gl.activeTexture(gl.TEXTURE0 + kind.unit)
+    if (rows > kind.rows || arrays.length > kind.layers) {
+      gl.deleteTexture(kind.texture)
+      kind.texture = gl.createTexture()
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, kind.texture)
+      gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, kind.internal, 1024, rows, arrays.length)
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+      kind.rows = rows
+      kind.layers = arrays.length
+    }
+    if (!count) return
+    // Through a pixel unpack buffer: bufferSubData is the fast upload path, and the texture copies run on the GPU.
+    const full = count >> 10
+    const rest = count & 1023
+    const bytes = count * (arrays[0] as Uint8Array).BYTES_PER_ELEMENT
+    gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, unpack)
+    gl.bufferData(gl.PIXEL_UNPACK_BUFFER, bytes * layers, gl.STREAM_DRAW)
+    for (let layer = 0; layer < layers; layer++) {
+      const offset = layer * bytes
+      gl.bufferSubData(gl.PIXEL_UNPACK_BUFFER, offset, arrays[layer], 0, count)
+      if (full) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, 1024, full, 1, kind.format, kind.type, offset)
+      if (rest) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, full, layer, rest, 1, 1, kind.format, kind.type, offset + full * 1024 * (bytes / count))
+    }
+    gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null)
   }
-  gl.enableVertexAttribArray(5)
-  gl.vertexAttribPointer(5, 4, gl.UNSIGNED_BYTE, true, stride, 40)
-  gl.vertexAttribDivisor(5, 1)
 
   gl.enable(gl.BLEND)
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
@@ -130,6 +190,7 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
       const texture = gl.createTexture()
       const mode = filter === 'nearest' ? gl.NEAREST : gl.LINEAR
       gl.bindTexture(gl.TEXTURE_2D, texture)
+      gl.activeTexture(gl.TEXTURE0)
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mode)
@@ -147,7 +208,20 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
       gl.clearColor(...background)
       gl.clear(gl.COLOR_BUFFER_BIT)
     },
-    draw(data, count, texture, onScreen) {
+    sprites({ count, blend, floats, uints, bytes }) {
+      // 3D uploads from arrays reject the premultiply flag that image uploads set.
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+      // Interpolate fields are only read when something interpolates.
+      upload(kinds[0], floats, count, blend >= 0 ? floats.length : floats.length - 3)
+      upload(kinds[1], uints, count, uints.length)
+      upload(kinds[2], bytes, count, blend >= 0 ? bytes.length : bytes.length - 2)
+      gl.activeTexture(gl.TEXTURE0)
+      gl.useProgram(program)
+      gl.uniform1f(uBlend, blend)
+      sprites = false
+    },
+    draw(ids, count, texture, onScreen) {
       if (!sprites) {
         gl.useProgram(program)
         gl.bindVertexArray(vao)
@@ -157,8 +231,10 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
       }
       const proj = onScreen ? screen : view
       if (proj !== bound) gl.uniformMatrix4fv(uViewProj, false, (bound = proj))
-      gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, count * FLOATS_PER_SPRITE), gl.STREAM_DRAW)
-      gl.bindTexture(gl.TEXTURE_2D, texture)
+      gl.bufferData(gl.ARRAY_BUFFER, ids.subarray(0, count), gl.STREAM_DRAW)
+      gl.uniform4f(uCell, texture.fu, texture.fv, texture.su, texture.sv)
+      gl.uniform3f(uGrid, texture.mu, texture.mv, texture.columns)
+      gl.bindTexture(gl.TEXTURE_2D, texture.handle)
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count)
     },
     createParticles(max) {
@@ -192,7 +268,7 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
       gl.uniformMatrix4fv(uParticleViewProj, false, onScreen ? screen : view)
       gl.uniform1f(uTime, time)
       gl.bindVertexArray(pool.vao)
-      gl.bindTexture(gl.TEXTURE_2D, texture)
+      gl.bindTexture(gl.TEXTURE_2D, texture.handle)
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count)
       sprites = false
     },

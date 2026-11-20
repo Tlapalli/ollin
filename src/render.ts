@@ -1,6 +1,7 @@
 import { Camera, createCamera } from './camera'
 import { animation, Interpolate, Position, Rotation, Sprite } from './components'
 import { token, type Game } from './core'
+import { presence } from './ecs'
 import { mat4, ortho } from './math'
 import { DEFAULT_CHARS, type Font } from './text'
 
@@ -100,9 +101,6 @@ export interface RendererOptions {
 /** Resource key for the `Renderer` registered by `webgl2()` or `webgpu()`. */
 export const Renderer = token<Renderer>('Renderer')
 
-/** Instance layout every backend reads: x, y, z, w, h, angle, u, v, uw, vh as f32, then RGBA as 4 bytes. */
-export const FLOATS_PER_SPRITE = 11
-
 /**
  * Particle layout, written once when a particle is born: x, y, vx, vy, gravity, birth time, life, size, u, v, uw, vh
  * as f32, then RGBA as 4 bytes. The vertex shader computes position and fade from the time.
@@ -116,14 +114,16 @@ export interface Backend<T = unknown, P = unknown> {
   createTexture(source: HTMLImageElement | HTMLCanvasElement, filter: 'linear' | 'nearest'): T
   /** Starts a frame; `view` maps world space, `screen` canvas pixels, `time` is the particle clock in seconds. */
   begin(width: number, height: number, view: Float32Array, screen: Float32Array, time: number): void
-  /** Draws `count` sprites (`FLOATS_PER_SPRITE` floats each). `data` is reused right after, so upload or copy it now. */
-  draw(data: Float32Array, count: number, texture: T, screen: boolean): void
+  /** Uploads this frame's component arrays (see `SpriteData`) before any `draw`. */
+  sprites(data: SpriteData): void
+  /** Draws `count` sprites given by entity id. `ids` is reused right after, so upload or copy it now. */
+  draw(ids: Uint32Array, count: number, texture: Texture<T>, screen: boolean): void
   /** A GPU buffer for `max` particles. */
   createParticles(max: number): P
   /** Writes particles (`FLOATS_PER_PARTICLE` floats each) starting at slot `first`. */
   writeParticles(pool: P, first: number, data: Float32Array): void
   /** Draws the first `count` slots of a pool; slots not alive at the frame's time draw nothing. */
-  drawParticles(pool: P, count: number, texture: T, screen: boolean): void
+  drawParticles(pool: P, count: number, texture: Texture<T>, screen: boolean): void
   end(): void
 }
 
@@ -141,9 +141,23 @@ interface Pool {
 // ponytail: fixed ring per (z, texture); grow it if games need more than this many particles alive at once per pool
 const POOL_SIZE = 8192
 
+/**
+ * The component arrays the sprite shader reads by entity id, uploaded as they are each frame (no packing on the CPU).
+ * `count` is the highest entity id drawn + 1. Interpolate arrays are only read when `blend >= 0`.
+ * floats: Position x, y, z, Sprite w, h, Rotation angle, Sprite alpha, Interpolate x, y, angle.
+ * uints: Sprite frame, tint. bytes: Sprite flipX, flipY, has Rotation, Interpolate ready, has Interpolate.
+ */
+export interface SpriteData {
+  count: number
+  blend: number
+  floats: Float32Array[]
+  uints: Uint32Array[]
+  bytes: Uint8Array[]
+}
+
 /** A texture plus its frame grid in UV units. */
-interface Texture {
-  handle: unknown
+export interface Texture<T = unknown> {
+  handle: T
   columns: number
   /** Frame size. */
   fu: number
@@ -156,17 +170,15 @@ interface Texture {
   mv: number
 }
 
-/** Packed instance data for one (z, texture) pair, rebuilt every frame from the ECS. */
+/** Entity ids for one (z, texture) pair, rebuilt every frame from the ECS. */
 interface Batch {
-  data: Float32Array
-  /** Same memory as `data`, for the packed RGBA word. */
-  bits: Uint32Array
+  ids: Uint32Array
   count: number
 }
 
 /** A y-sorted layer: entities collected this frame, then sorted and drawn in runs of the same texture. */
 interface SortedLayer {
-  entities: Uint32Array
+  ids: Uint32Array
   count: number
   /** Last frame's sorted entities. The sort is stable and starts from this order, so ties never flicker. */
   order: Uint32Array
@@ -184,9 +196,58 @@ const grow = <T extends Float32Array | Uint32Array | Float64Array>(a: T, needed:
   return next
 }
 
-const newBatch = (): Batch => {
-  const data = new Float32Array(256 * FLOATS_PER_SPRITE)
-  return { data, bits: new Uint32Array(data.buffer), count: 0 }
+const newBatch = (): Batch => ({ ids: new Uint32Array(256), count: 0 })
+
+interface Snapshot {
+  z: Int32Array
+  texture: Int32Array
+}
+
+/** Whether `z` and `texture` of entities below `top` still hold the snapshot's bits. */
+function same(z: Float32Array, texture: Uint32Array, top: number, snap: Snapshot) {
+  if (snap.z.length !== top) return false
+  const zi = new Int32Array(z.buffer, z.byteOffset, top)
+  const ti = new Int32Array(texture.buffer, texture.byteOffset, top)
+  const sz = snap.z
+  const st = snap.texture
+  for (let i = 0; i < top; i++) if (zi[i] !== sz[i] || ti[i] !== st[i]) return false
+  return true
+}
+
+function snapshot(z: Float32Array, texture: Uint32Array, top: number, snap: Snapshot) {
+  snap.z = new Int32Array(z.buffer.slice(z.byteOffset, z.byteOffset + top * 4))
+  snap.texture = new Int32Array(texture.buffer.slice(texture.byteOffset, texture.byteOffset + top * 4))
+}
+
+/**
+ * Appends each sprite's id to the batch (or sorted layer) of its (z, texture) and returns the highest id + 1.
+ * Consecutive sprites usually share both (tile layers, particles), so `pick` (the map lookups) runs only when they
+ * change. Top-level and small so V8 optimizes it on its own.
+ */
+function collect(all: readonly number[], z: Float32Array, texture: Uint32Array, pick: (z: number, texture: number) => Batch | undefined) {
+  const n = all.length
+  let top = 0
+  let list: Batch | undefined
+  let ids: Uint32Array = new Uint32Array(0)
+  let count = 0
+  let lastZ = NaN
+  let lastTexture = -1
+  for (let i = 0; i < n; i++) {
+    const e = all[i]
+    if (z[e] !== lastZ || texture[e] !== lastTexture) {
+      if (list) list.count = count
+      lastZ = z[e]
+      lastTexture = texture[e]
+      list = pick(lastZ, lastTexture)
+      if (list) ({ ids, count } = list)
+    }
+    if (!list) continue
+    if (count === ids.length) ids = list.ids = grow(ids, count + 1)
+    ids[count++] = e
+    if (e >= top) top = e + 1
+  }
+  if (list) list.count = count
+  return top
 }
 
 /** Registers the `Renderer` and `Camera` resources and the render system on top of a backend. */
@@ -334,9 +395,12 @@ export function createRenderer(game: Game, backend: Backend) {
 
   const sortedFor = (z: number) => {
     let layer = sortedLayers.get(z)
-    if (!layer) sortedLayers.set(z, (layer = { entities: new Uint32Array(256), count: 0, order: new Uint32Array(256), sorted: 0 }))
+    if (!layer) sortedLayers.set(z, (layer = { ids: new Uint32Array(256), count: 0, order: new Uint32Array(256), sorted: 0 }))
     return layer
   }
+
+  const pick = (z: number, texture: number): Batch | undefined =>
+    !textures[texture] ? undefined : ySort.has(z) ? sortedFor(z) : batchFor(z, texture)
 
   const batchFor = (z: number, texture: number) => {
     let byTexture = layers.get(z)
@@ -353,6 +417,7 @@ export function createRenderer(game: Game, backend: Backend) {
   // Interpolation: record each Interpolate entity's transform at the start of every fixed tick (the renderer's plugin
   // runs before the game's, so this sees the state the last tick left).
   const interpolated = world.query(Interpolate, Position)
+  world.query(Rotation) // registers Rotation, so its arrays exist for the upload even if no entity has used it yet
   game.system(() => {
     const { x, y, angle: a, ready } = Interpolate
     for (const e of interpolated.entities) {
@@ -363,60 +428,22 @@ export function createRenderer(game: Game, backend: Backend) {
     }
   }, 'fixed')
 
-  // Component arrays, read once per frame at the top of the render system (they are replaced when the world grows).
-  let px = Position.x, py = Position.y, pz = Position.z, angle = Rotation.angle
-  let sw = Sprite.w, sh = Sprite.h, sframe = Sprite.frame, stint = Sprite.tint, salpha = Sprite.alpha, sflipX = Sprite.flipX, sflipY = Sprite.flipY
-  let ix = Interpolate.x, iy = Interpolate.y, iangle = Interpolate.angle, iready = Interpolate.ready
-  /** Fixed-tick progress this frame, or -1 when no entity interpolates (skips the check per sprite). */
-  let blend = -1
+  /** Highest entity id drawn this frame + 1. */
+  let top = 0
+  /** What the current batches were built from. */
+  const built = { version: -1, textures: 0, sorting: '', z: new Int32Array(0), texture: new Int32Array(0) }
 
-  /** Appends one sprite's instance data to a batch. */
-  const pack = (b: Batch, e: number, t: Texture) => {
-    if ((b.count + 1) * FLOATS_PER_SPRITE > b.data.length) {
-      b.data = grow(b.data, (b.count + 1) * FLOATS_PER_SPRITE)
-      b.bits = new Uint32Array(b.data.buffer)
-    }
-    const o = b.count++ * FLOATS_PER_SPRITE
-    const d = b.data
-    const f = sframe[e]
-    const col = f % t.columns
-    const row = Math.floor(f / t.columns)
-    const u = t.mu + col * t.su
-    const v = t.mv + row * t.sv
-    const flipX = sflipX[e]
-    const flipY = sflipY[e]
-    d[o] = px[e]
-    d[o + 1] = py[e]
-    d[o + 2] = pz[e]
-    d[o + 3] = sw[e]
-    d[o + 4] = sh[e]
-    d[o + 5] = world.has(e, Rotation) ? angle[e] : 0
-    // Mirroring is free: start from the far edge of the frame and walk the UVs backwards.
-    d[o + 6] = flipX ? u + t.fu : u
-    d[o + 7] = flipY ? v + t.fv : v
-    d[o + 8] = flipX ? -t.fu : t.fu
-    d[o + 9] = flipY ? -t.fv : t.fv
-    const a = salpha[e]
-    const tint = stint[e]
-    // Little-endian RGBA bytes, read by the shader as a normalized vec4.
-    b.bits[o + 10] = ((a >= 1 ? 255 : a <= 0 ? 0 : (a * 255 + 0.5) | 0) << 24) | ((tint & 0xff) << 16) | (tint & 0xff00) | ((tint >> 16) & 0xff)
-    if (blend >= 0 && iready[e] && world.has(e, Interpolate)) smooth(d, o, e)
-  }
-
-  /** Moves an interpolated sprite back between its last two fixed-tick transforms. Kept out of `pack` so it stays small enough to inline. */
-  const smooth = (d: Float32Array, o: number, e: number) => {
-    d[o] = ix[e] + (d[o] - ix[e]) * blend
-    d[o + 1] = iy[e] + (d[o + 1] - iy[e]) * blend
-    const turn = d[o + 5] - iangle[e]
-    d[o + 5] = iangle[e] + (turn - Math.PI * 2 * Math.round(turn / (Math.PI * 2))) * blend // shortest way around
+  /** Appends one sprite to a batch. */
+  const pack = (b: Batch, e: number) => {
+    if (b.count === b.ids.length) b.ids = grow(b.ids, b.count + 1)
+    b.ids[b.count++] = e
   }
 
   let onScreen = false
   const draw = (b: Batch, texture: number) => {
-    backend.draw(b.data, b.count, textures[texture].handle, onScreen)
+    backend.draw(b.ids, b.count, textures[texture], onScreen)
     stats.drawCalls++
     stats.sprites += b.count
-    b.count = 0
   }
 
   // Per-entity frame stamps: `inLayer[e] === frame` means e was collected this frame, `placed[e] === frame` that it is queued.
@@ -436,7 +463,7 @@ export function createRenderer(game: Game, backend: Backend) {
     const n = layer.count
     frame++
     for (let i = 0; i < n; i++) {
-      const e = layer.entities[i]
+      const e = layer.ids[i]
       if (e >= inLayer.length) {
         inLayer = grow(inLayer, e + 1)
         placed = grow(placed, e + 1)
@@ -457,7 +484,7 @@ export function createRenderer(game: Game, backend: Backend) {
       }
     }
     for (let i = 0; i < n; i++) {
-      const e = layer.entities[i]
+      const e = layer.ids[i]
       if (placed[e] !== frame) {
         placed[e] = frame
         items[k++] = e
@@ -499,45 +526,32 @@ export function createRenderer(game: Game, backend: Backend) {
     let runTexture = -1
     for (let i = 0; i < n; i++) {
       const e = items[i]
-      if (texture[e] !== runTexture && scratch.count) draw(scratch, runTexture)
+      if (texture[e] !== runTexture && scratch.count) {
+        draw(scratch, runTexture)
+        scratch.count = 0
+      }
       runTexture = texture[e]
-      pack(scratch, e, textures[runTexture])
+      pack(scratch, e)
     }
     if (scratch.count) draw(scratch, runTexture)
+    scratch.count = 0
   }
 
   game.system((dt) => {
     time += dt
-    ;({ x: px, y: py, z: pz } = Position)
-    angle = Rotation.angle
-    ;({ w: sw, h: sh, frame: sframe, tint: stint, alpha: salpha, flipX: sflipX, flipY: sflipY } = Sprite)
-    ;({ x: ix, y: iy, angle: iangle, ready: iready } = Interpolate)
-    blend = interpolated.entities.length ? game.fixedAlpha : -1
-    for (const byTexture of layers.values()) for (const batch of byTexture.values()) batch.count = 0
-    for (const layer of sortedLayers.values()) layer.count = 0
     stats.drawCalls = stats.sprites = 0
     const { z } = Position
     const { texture } = Sprite
-    // Consecutive sprites usually share z and texture (tile layers, particles), so skip the map lookups for them.
-    let batch: Batch | undefined
-    let sorted: SortedLayer | undefined
-    let lastZ = NaN
-    let lastTexture = -1
-    for (const e of sprites.entities) {
-      const t = textures[texture[e]]
-      if (!t) continue
-      if (z[e] !== lastZ || texture[e] !== lastTexture) {
-        lastZ = z[e]
-        lastTexture = texture[e]
-        sorted = ySort.has(lastZ) ? sortedFor(lastZ) : undefined
-        batch = sorted ? undefined : batchFor(lastZ, lastTexture)
-      }
-      if (sorted) {
-        sorted.entities = grow(sorted.entities, sorted.count + 1)
-        sorted.entities[sorted.count++] = e
-        continue
-      }
-      pack(batch!, e, t)
+    // Batches only change when sprites come or go or a z or texture changes; otherwise last frame's ids still hold.
+    const sorting = [...ySort].join()
+    if (sprites.version !== built.version || textures.length !== built.textures || sorting !== built.sorting || !same(z, texture, top, built)) {
+      for (const byTexture of layers.values()) for (const batch of byTexture.values()) batch.count = 0
+      for (const layer of sortedLayers.values()) layer.count = 0
+      top = collect(sprites.entities, z, texture, pick)
+      snapshot(z, texture, top, built)
+      built.version = sprites.version
+      built.textures = textures.length
+      built.sorting = sorting
     }
 
     const { width, height } = game.canvas
@@ -546,6 +560,13 @@ export function createRenderer(game: Game, backend: Backend) {
     camera.viewProj(viewProj)
     ortho(screenProj, 0, width, height, 0, -1000, 1000)
     backend.begin(width, height, viewProj, screenProj, time)
+    backend.sprites({
+      count: top,
+      blend: interpolated.entities.length ? game.fixedAlpha : -1,
+      floats: [Position.x, Position.y, Position.z, Sprite.w, Sprite.h, Rotation.angle, Sprite.alpha, Interpolate.x, Interpolate.y, Interpolate.angle],
+      uints: [Sprite.frame, Sprite.tint],
+      bytes: [Sprite.flipX, Sprite.flipY, presence(Rotation), Interpolate.ready, presence(Interpolate)],
+    })
     const live = [...pools.values()].filter((p) => p.until > time)
     for (const zKey of [...new Set([...layers.keys(), ...sortedLayers.keys(), ...live.map((p) => p.z)])].sort((a, b) => a - b)) {
       onScreen = screen.has(zKey)
@@ -568,7 +589,7 @@ export function createRenderer(game: Game, backend: Backend) {
       }
       for (const pool of live) {
         if (pool.z !== zKey) continue
-        backend.drawParticles(pool.handle, pool.used, textures[pool.texture].handle, onScreen)
+        backend.drawParticles(pool.handle, pool.used, textures[pool.texture], onScreen)
         stats.drawCalls++
       }
     }

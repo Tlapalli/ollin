@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Faster sprite rendering: the shaders read each sprite's components by entity id from the ECS arrays, uploaded as
+  they are, instead of the CPU packing 11 floats per sprite every frame; batches are reused across frames while no
+  sprite is added or removed and no `z` or `texture` changes. 3–4x less main-thread work per frame at 10,000–50,000
+  sprites, ahead of PixiJS's ParticleContainer (README, Performance). WebGL2 and WebGPU cost the same.
+- `Query.version` changes whenever an entity enters or leaves the query.
+- Breaking for custom renderer backends only: `Backend` gains `sprites(data)`, `draw` takes entity ids, and
+  `FLOATS_PER_SPRITE` is gone.
+- `examples/bench` adds PixiJS 8 (`pixi.html`, `?mode=particle` for its ParticleContainer).
+
 ## 0.1.0-alpha.1
 
 - Tilemaps: `map.tileAt(layer, x, y)` finds the tile under a world point (diamond cells on isometric maps), and

@@ -65,6 +65,9 @@ export function defineComponent<const S extends Schema>(schema: S, defaults: Par
 }
 
 const meta = (c: Component) => c[META]
+
+/** @internal 1 at `e` when the entity has `c` (the renderer uploads it). Replaced on growth like the field arrays. */
+export const presence = (c: Component) => meta(c).present
 const store = (c: Component) => c as unknown as Record<string, TypedArray>
 
 // Growing transfers the old buffer (often without copying) and detaches it, so stale cached arrays read as empty
@@ -81,6 +84,8 @@ function resize(c: Component, capacity: number, keep = true) {
 /** Live set of entities that have every listed component. Iterate `entities`; it stays dense. */
 export class Query {
   readonly entities: Entity[] = []
+  /** Changes whenever an entity enters or leaves the query, so systems can cache work derived from `entities`. */
+  version = 0
   private readonly slot: number[] = []
 
   constructor(readonly components: readonly Component[]) {}
@@ -92,6 +97,7 @@ export class Query {
   insert(e: Entity) {
     if ((this.slot[e] ?? -1) >= 0) return
     this.slot[e] = this.entities.push(e) - 1
+    this.version++
   }
 
   /** Swap-remove: iterate `entities` backwards if a system despawns while iterating. */
@@ -104,6 +110,7 @@ export class Query {
       this.slot[last] = i
     }
     this.slot[e] = -1
+    this.version++
   }
 }
 

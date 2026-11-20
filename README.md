@@ -56,28 +56,29 @@ Ollin ships ES modules with TypeScript types and expects a bundler such as Vite.
 
 ## Performance
 
-`examples/bench` runs the same bouncing-sprite simulation in Ollin and in Phaser 4.2.1 on a 1280x720 canvas. Phaser runs it two ways: one `Image` game object per sprite (the idiomatic way), and a `SpriteGPULayer` updated with `editMember` every frame.
+`examples/bench` runs the same bouncing-sprite simulation in Ollin, PixiJS 8.23 and Phaser 4.2.1 on a 1280x720 canvas. PixiJS runs it two ways: one `Sprite` per object in a `Container` (the idiomatic way), and a `ParticleContainer` with only positions dynamic (its fast path, which gives up per-sprite tint, alpha and rotation changes). Phaser runs it with one `Image` per sprite, and with a `SpriteGPULayer` updated with `editMember` every frame.
 
-Each page reports main-thread work per frame: the time spent inside `requestAnimationFrame` callbacks (simulation, engine and WebGL calls). That is what eats the 16.6 ms budget of a 60 fps frame. Measured in Chromium with vsync on, on an Apple M4 Max with the CPU throttled 4x to approximate a mid-range phone:
+Each page reports main-thread work per frame: the time spent inside `requestAnimationFrame` callbacks (simulation, engine and WebGL calls). That is what eats the 16.6 ms budget of a 60 fps frame. Measured in Chromium with vsync on, on an Apple M4 Max with the CPU throttled 4x to approximate a mid-range phone (median of 3 runs in random order):
 
-| Sprites | Ollin | Phaser Image | Phaser GPU layer |
-| ------: | ----: | -----------: | ---------------: |
-| 1,000 | 0.07 ms | 0.33 ms | 0.16 ms |
-| 5,000 | 0.28 ms | 1.58 ms | 0.90 ms |
-| 10,000 | 0.78 ms | 2.94 ms | 1.93 ms |
-| 20,000 | 1.97 ms | 7.06 ms | 3.99 ms |
+| Sprites | Ollin | Pixi ParticleContainer | Pixi Sprite | Phaser GPU layer | Phaser Image |
+| ------: | ----: | ---------------------: | ----------: | ---------------: | -----------: |
+| 1,000 | 0.03 ms | 0.04 ms | 0.18 ms | 0.17 ms | 0.24 ms |
+| 5,000 | 0.09 ms | 0.12 ms | 1.16 ms | 0.95 ms | 1.64 ms |
+| 10,000 | 0.14 ms | 0.23 ms | 2.48 ms | 1.90 ms | 2.83 ms |
+| 20,000 | 0.47 ms | 0.62 ms | 6.48 ms | 3.87 ms | 6.77 ms |
+| 50,000 | 1.32 ms | 1.58 ms | 18.70 ms | 10.59 ms | 23.93 ms |
 
-At 20,000 sprites Phaser spends 42% of the frame budget on sprites alone; Ollin spends 12%, with per-sprite tint, alpha and flip included like Phaser's. Results under 1 ms are noisy (CPU frequency scaling), so read them as ratios.
+At 20,000 sprites Ollin spends 3% of the frame budget, with per-sprite tint, alpha, flip, rotation and frame still free to change every frame. Results under 1 ms are noisy (CPU frequency scaling), so read them as ratios; PixiJS also swings between runs (its ParticleContainer measured 0.45–0.90 ms at 20,000 across sessions).
 
-The WebGPU backend (`bench/ollin.html?webgpu`) costs about the same as WebGL2: within ±25% across runs, a little ahead at 20,000 sprites and a little behind under 5,000. The time goes to packing sprites in JavaScript, which both backends share.
+Ollin does not pack sprites on the CPU. The shader reads each sprite's components by entity id straight from the ECS arrays, which are uploaded as they are; per sprite, the CPU only writes its id into a batch, and skips even that while no sprite was added or removed and no `z` or `texture` changed. The WebGPU backend (`bench/ollin.html?webgpu`) costs the same as WebGL2.
 
-Open `bench/ollin.html?count=N`, `bench/phaser.html?count=N` and `bench/phaser-gpu.html?mode=cpu&count=N` from `npm run dev` to reproduce; each page prints its average and p95 work per frame after a 4 s run. `phaser-gpu.html?mode=gpu` moves sprites with shader tweens instead, a ceiling for static scenery rather than the same workload.
+Open `bench/ollin.html?count=N`, `bench/pixi.html?count=N` (`&mode=particle` for the ParticleContainer), `bench/phaser.html?count=N` and `bench/phaser-gpu.html?mode=cpu&count=N` from `npm run dev` to reproduce; each page prints its average and p95 work per frame after a 4 s run. `phaser-gpu.html?mode=gpu` moves sprites with shader tweens instead, a ceiling for static scenery rather than the same workload.
 
 ## Development
 
 ```bash
 npm install
-npm run dev        # examples: bunnymark, physics, a Tiled platformer, an isometric map, three small complete games (xolo, ocelotl, mictlan) and the Phaser benchmark
+npm run dev        # examples: bunnymark, physics, a Tiled platformer, an isometric map, three small complete games (xolo, ocelotl, mictlan) and the PixiJS and Phaser benchmark
 npm test
 npm run typecheck
 ```

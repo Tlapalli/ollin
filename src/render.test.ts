@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { Interpolate, Position, Sprite } from './components'
 import { createGame } from './core'
-import { createRenderer, FLOATS_PER_PARTICLE, FLOATS_PER_SPRITE, Renderer, type Backend } from './render'
+import { createRenderer, FLOATS_PER_PARTICLE, Renderer, type Backend, type SpriteData } from './render'
 
 // The render core is GPU-free: a fake backend records what it is asked to draw.
 class FakeImage {
@@ -16,13 +16,21 @@ const setup = async () => {
   const sprites: number[] = []
   const writes: [first: number, count: number][] = []
   const particleDraws: number[] = []
+  let data: SpriteData
   const backend: Backend = {
     name: 'webgl2',
     createTexture: () => ({}),
     begin() {},
     end() {},
-    draw: (data, count) => {
-      for (let i = 0; i < count; i++) sprites.push(data[i * FLOATS_PER_SPRITE]) // x of each sprite
+    sprites: (d) => void (data = d),
+    // Records the x each sprite is drawn at, the way the shaders compute it from the uploaded component arrays.
+    draw: (ids, count) => {
+      const [x, , , , , , , ix] = data.floats
+      const [, , , ready, interpolated] = data.bytes
+      for (const e of ids.subarray(0, count)) {
+        expect(e).toBeLessThan(data.count)
+        sprites.push(data.blend >= 0 && ready[e] && interpolated[e] ? ix[e] + (x[e] - ix[e]) * data.blend : x[e])
+      }
     },
     createParticles: () => ({}),
     writeParticles: (_pool, first, data) => void writes.push([first, data.length / FLOATS_PER_PARTICLE]),
@@ -93,4 +101,27 @@ it('draws sprites without a texture as solid rectangles (texture 0 is a white pi
   game.world.spawn([Position, { x: 7 }], [Sprite, { w: 10, h: 10, tint: 0xff0000 }])
   game.step(0.1)
   expect(sprites).toEqual([7])
+})
+
+it('reuses batches while nothing changes, and rebuilds them when a z, texture or sprite set changes', async () => {
+  const { game, texture, sprites } = await setup()
+  const a = game.world.spawn([Position, { x: 1 }], [Sprite, { w: 1, h: 1, texture }])
+  const b = game.world.spawn([Position, { x: 2 }], [Sprite, { w: 1, h: 1, texture }])
+  const frame = () => {
+    sprites.length = 0
+    game.step(0)
+    return [...sprites]
+  }
+  expect(frame()).toEqual([1, 2])
+  Position.x[a] = 5 // moving does not touch the batches
+  expect(frame()).toEqual([5, 2])
+  Position.z[a] = 1 // a moves to a layer on top
+  expect(frame()).toEqual([2, 5])
+  Sprite.texture[b] = 0 // b changes texture: same layer, lower texture id, still drawn
+  Position.z[a] = 0
+  expect(frame()).toEqual([2, 5])
+  game.world.despawn(b)
+  expect(frame()).toEqual([5])
+  game.world.spawn([Position, { x: 9 }], [Sprite, { w: 1, h: 1, texture }])
+  expect(frame()).toEqual([5, 9])
 })
