@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-alpha.2
 
 - Faster sprite rendering: the shaders read each sprite's components by entity id from the ECS arrays, uploaded as
   they are, instead of the CPU packing 11 floats per sprite every frame; batches are reused across frames while no
