@@ -197,8 +197,25 @@ export function spawnTilemap(world: World, map: TiledMap, tilesets: LoadedTilese
   return result
 }
 
+/** A Tiled map fetched with its tilesets, ready to spawn: `fetchTilemap` loads once, every scene calls `spawn`. */
+export interface TilemapAsset {
+  readonly map: TiledMap
+  readonly tilesets: LoadedTileset[]
+  /** Spawns the map's tiles into the world (see `spawnTilemap`); call it in each scene, after `game.scene` cleared the world. */
+  spawn(options?: { z?: number }): Tilemap
+}
+
 /** Fetches a Tiled JSON map, loads its tilesets as textures and spawns it. Needs the `webgl2` plugin. */
 export async function loadTilemap(game: Game, url: string, options?: { z?: number }): Promise<Tilemap> {
+  return (await fetchTilemap(game, url, options)).spawn()
+}
+
+/**
+ * Fetches a Tiled JSON map and loads its tilesets as textures without spawning anything, so a game can load its maps
+ * once and spawn one per scene: `const level = await fetchTilemap(game, url)`, then `level.spawn()` in the scene.
+ * `options.z` is the default for `spawn`.
+ */
+export async function fetchTilemap(game: Game, url: string, options?: { z?: number }): Promise<TilemapAsset> {
   const mapUrl = new URL(url, globalThis.location?.href)
   const map: TiledMap = await (await fetch(mapUrl)).json()
   const renderer = game.get(Renderer)
@@ -227,5 +244,5 @@ export async function loadTilemap(game: Game, url: string, options?: { z?: numbe
     }),
   )
 
-  return spawnTilemap(game.world, map, tilesets, options)
+  return { map, tilesets, spawn: (spawnOptions = options) => spawnTilemap(game.world, map, tilesets, spawnOptions) }
 }

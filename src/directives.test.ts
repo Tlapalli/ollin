@@ -28,19 +28,19 @@ it('parses directives with names, paths and typed options', () => {
 
 it('compiles to a module that creates the game and loads every asset in parallel', () => {
   const code = compileDirectives(parseDirectives(source), 'ollin')
-  expect(code).toContain('import { createGame, input, Renderer, webgl2, audio, Audio, loadTilemap } from "ollin"')
+  expect(code).toContain('import { createGame, input, Renderer, webgl2, audio, Audio, fetchTilemap } from "ollin"')
   expect(code).toContain('import url0 from "./art/tiles.png?url"')
   expect(code).toContain('import url2 from "./sfx/jump.wav?url"') // bare paths are relative to the file
   expect(code).toContain('plugins: [webgl2({ background: [0.1059, 0.1059, 0.1059, 1] }), input(), audio()]')
   expect(code).toContain('renderer.loadTexture(url0, {"frameWidth":16,"frameHeight":16,"spacing":1,"filter":"nearest"})')
-  expect(code).toContain('loadTilemap(game, url4, { z: 2 })')
+  expect(code).toContain('fetchTilemap(game, url4, { z: 2 })')
   expect(code).toContain('export const assets = { tiles: loaded[0], hero: loaded[1], jump: loaded[2], ui: loaded[3], level: loaded[4] }')
   expect(() => new Function(code.replace(/^import .*$/gm, '').replace(/export /g, '').replace(/await /g, ''))).not.toThrow() // valid JS
 })
 
 it('declares typed assets for the editor', () => {
   expect(declareDirectives(parseDirectives(source), 'ollin')).toContain(
-    'export declare const assets: { tiles: number; hero: Atlas; jump: AudioBuffer; ui: Font; level: Tilemap }',
+    'export declare const assets: { tiles: number; hero: Atlas; jump: AudioBuffer; ui: Font; level: TilemapAsset }',
   )
 })
 
@@ -67,7 +67,7 @@ it('uses public paths as they are and bundles the image of each relative atlas',
   const code = compileDirectives(d, 'ollin', { hero: './art/hero.png' })
   expect(code).toContain('import image0 from "./art/hero.png?url"')
   expect(code).toContain('renderer.loadAtlas(url0, {"filter":"nearest","image":image0})')
-  expect(code).toContain('loadTilemap(game, "/maps/level.tmj")')
+  expect(code).toContain('fetchTilemap(game, "/maps/level.tmj")')
   expect(code).toContain('load({ sound: "/sfx/jump.wav" })')
   expect(code).not.toContain('url1')
   expect(compileDirectives(parseDirectives('#atlas a ./a.json'), 'ollin', { a: './a.png' })).toContain('renderer.loadAtlas(url0, {"image":image0})')

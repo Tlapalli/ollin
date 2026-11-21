@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `fetchTilemap(game, url)` loads a Tiled map once without spawning it; `spawn()` it in each scene. `#map` in `.ollin`
+  files now gives that asset (`assets.level.spawn()`), so maps survive scene changes. `loadTilemap` is unchanged.
 - `Tiling` repeats a sprite's frame to fill it, with a scroll offset: scrolling backgrounds, parallax, water, floors.
 - Parent and child: `attach(world, sword, hero, { x: 12, y: -4 })` keeps a child at an offset from its parent, turned
   by the parent's rotation, in chains too; children are despawned with their parent.
