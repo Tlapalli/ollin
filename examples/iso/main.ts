@@ -10,7 +10,8 @@ const renderer = game.get(Renderer)
 const camera = game.get(Camera)
 const keys = game.get(Input).keys
 
-const { map, walker: walkerTexture, ui: font } = assets
+const { walker: walkerTexture, ui: font } = assets
+const map = assets.map.spawn()
 
 // The walker joins the blocks layer, and that layer draws in order of each sprite's bottom edge.
 const BLOCKS = Position.z[map.layers.blocks[0]]

@@ -116,7 +116,7 @@ export function compileDirectives(directives: Directive[], runtime = '@tlapalli/
   const imports = ['createGame', 'input', 'Renderer', game.renderer === 'webgpu' ? 'webgpu' : 'webgl2']
   if (has('sound')) imports.push('audio', 'Audio')
   if (game.devtools === true) imports.push('devtools')
-  if (has('map')) imports.push('loadTilemap')
+  if (has('map')) imports.push('fetchTilemap')
   out.push(`import { ${imports.join(', ')} } from ${JSON.stringify(runtime)}`)
   const url = (d: Directive, i: number) => (d.path.startsWith('/') ? JSON.stringify(d.path) : `url${i}`)
   assets.forEach((d, i) => {
@@ -154,7 +154,7 @@ export function compileDirectives(directives: Directive[], runtime = '@tlapalli/
       case 'font':
         return `renderer.loadFont(${js({ family: o.family, size: o.size, weight: o.weight, chars: o.chars, filter })})`
       case 'map':
-        return `loadTilemap(game, ${url(d, i)}${o.z === undefined ? '' : `, { z: ${o.z} }`})`
+        return `fetchTilemap(game, ${url(d, i)}${o.z === undefined ? '' : `, { z: ${o.z} }`})`
     }
   })
   out.push(`const loaded = await Promise.all([${loads.join(', ')}])`)
@@ -164,11 +164,11 @@ export function compileDirectives(directives: Directive[], runtime = '@tlapalli/
 
 /** Generates the `.d.ts` next to a `.ollin` file, so editors and `tsc` know `assets.hero` is an `Atlas`. */
 export function declareDirectives(directives: Directive[], runtime = '@tlapalli/ollin'): string {
-  const types: Record<AssetKind, string> = { texture: 'number', atlas: 'Atlas', sound: 'AudioBuffer', font: 'Font', map: 'Tilemap' }
+  const types: Record<AssetKind, string> = { texture: 'number', atlas: 'Atlas', sound: 'AudioBuffer', font: 'Font', map: 'TilemapAsset' }
   const assets = directives.filter((d) => d.kind !== 'game')
   return [
     '// Generated from the .ollin file next to it by @tlapalli/ollin/vite. Do not edit.',
-    `import type { Atlas, Font, Game, Tilemap } from ${JSON.stringify(runtime)}`,
+    `import type { Atlas, Font, Game, TilemapAsset } from ${JSON.stringify(runtime)}`,
     'export declare const game: Game',
     `export declare const assets: { ${assets.map((d) => `${d.name}: ${types[d.kind as AssetKind]}`).join('; ')} }`,
     '',

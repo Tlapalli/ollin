@@ -75,7 +75,7 @@ import { assets, game } from './game.ollin'
 game.world.spawn([Position, { x: 100, y: 100 }], [Sprite, assets.hero.sprite('idle 0')], [Animation, assets.hero.tags.run])
 ```
 
-The Vite plugin turns the file into a module that creates the game and loads everything in parallel, stops the build with the file and line when a path is wrong, and writes `game.ollin.d.ts` so `assets.hero` is typed. Paths starting with `/` come from `public/` (Tiled maps go there, so their tileset images ship too).
+The Vite plugin turns the file into a module that creates the game and loads everything in parallel, stops the build with the file and line when a path is wrong, and writes `game.ollin.d.ts` so `assets.hero` is typed. Paths starting with `/` come from `public/` (Tiled maps go there, so their tileset images ship too). Maps load once and spawn per scene: `assets.level.spawn()`.
 
 ## Performance
 
