@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { Animation, animation, hit, overlaps, Position, Sprite } from './components'
+import { Animation, animation, attach, hierarchy, hit, overlaps, Parent, Position, Rotation, Sprite } from './components'
+import type { Game } from './core'
 import { defineComponent, u16, World } from './ecs'
 import { DEFAULT_CHARS, spawnText, type Font } from './text'
 
@@ -25,6 +26,45 @@ describe('animation', () => {
       frames.push([Sprite.frame[loop], Sprite.frame[once]])
     }
     expect(frames).toEqual([[5, 1], [6, 1], [4, 1], [5, 1]])
+  })
+})
+
+describe('hierarchy', () => {
+  const setup = () => {
+    const world = new World()
+    const game = { world, fixedAlpha: 0 } as never as Game
+    return { world, step: hierarchy(game) }
+  }
+
+  it('places children at the parent plus an offset turned by its rotation, chains included, in any order', () => {
+    const { world, step } = setup()
+    const hero = world.spawn([Position, { x: 100, y: 50, z: 2 }], [Rotation, { angle: Math.PI / 2 }])
+    const hand = world.spawn([Position], [Rotation])
+    const sword = world.spawn([Position])
+    attach(world, sword, hand, { x: 5 }) // the grandchild is attached first, so the query meets it before its parent
+    attach(world, hand, hero, { x: 10, z: 1, angle: 0.5 })
+    step(0)
+    const round = (e: number) => [Position.x[e], Position.y[e], Position.z[e]].map((v) => Math.round(v * 1000) / 1000)
+    expect(round(hand)).toEqual([100, 60, 3]) // (10, 0) turned 90 degrees is (0, 10)
+    expect(Rotation.angle[hand]).toBeCloseTo(Math.PI / 2 + 0.5)
+    expect(round(sword)).toEqual([round(hand)[0] + 5 * Math.cos(Math.PI / 2 + 0.5), round(hand)[1] + 5 * Math.sin(Math.PI / 2 + 0.5), 3].map((v) => Math.round(v * 1000) / 1000))
+    Position.x[hero] = 0
+    step(0)
+    expect(Position.x[hand]).toBeCloseTo(0)
+  })
+
+  it('despawns children with their parent, down the chain, and is not fooled by a recycled id', () => {
+    const { world, step } = setup()
+    const boss = world.spawn([Position])
+    const bar = world.spawn([Position])
+    const label = world.spawn([Position])
+    attach(world, bar, boss, { y: -20 })
+    attach(world, label, bar)
+    world.despawn(boss)
+    const recycled = world.spawn([Position]) // takes boss's id
+    expect(recycled).toBe(boss)
+    step(0)
+    expect([world.has(bar, Parent), world.has(label, Parent), world.count]).toEqual([false, false, 1])
   })
 })
 

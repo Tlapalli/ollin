@@ -3,6 +3,8 @@
 ## Unreleased
 
 - `Tiling` repeats a sprite's frame to fill it, with a scroll offset: scrolling backgrounds, parallax, water, floors.
+- Parent and child: `attach(world, sword, hero, { x: 12, y: -4 })` keeps a child at an offset from its parent, turned
+  by the parent's rotation, in chains too; children are despawned with their parent.
 - `spawnText(..., { maxWidth })` wraps text at spaces for dialog boxes; words wider than a line break where they must.
 - `NineSlice` keeps a frame's borders at their size and stretches the middle: UI panels, buttons, dialog boxes.
 
