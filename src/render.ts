@@ -207,7 +207,7 @@ const POOL_SIZE = 8192
  * Interpolate fields when `blend < 0`, Tiling and NineSlice fields while no entity has them (their presence bytes are
  * always uploaded, so the shader never reads a stale layer).
  * floats: Position x, y, z, Sprite w, h, Rotation angle, Sprite alpha, Interpolate x, y, angle, Tiling w, h, x, y,
- * NineSlice left, right, top, bottom.
+ * NineSlice left, right, top, bottom, scale.
  * uints: Sprite frame, tint. bytes: Sprite flipX, flipY, has Rotation, Interpolate ready, has Interpolate,
  * has Tiling, has NineSlice.
  */
@@ -691,7 +691,7 @@ export function createRenderer(game: Game, backend: Backend) {
         Position.x, Position.y, Position.z, Sprite.w, Sprite.h, Rotation.angle, Sprite.alpha,
         ...(smooth ? [Interpolate.x, Interpolate.y, Interpolate.angle] : [null, null, null]),
         ...(tiling ? [Tiling.w, Tiling.h, Tiling.x, Tiling.y] : [null, null, null, null]),
-        ...(slicing ? [NineSlice.left, NineSlice.right, NineSlice.top, NineSlice.bottom] : [null, null, null, null]),
+        ...(slicing ? [NineSlice.left, NineSlice.right, NineSlice.top, NineSlice.bottom, NineSlice.scale] : [null, null, null, null, null]),
       ],
       uints: [Sprite.frame, Sprite.tint],
       bytes: [Sprite.flipX, Sprite.flipY, presence(Rotation), smooth ? Interpolate.ready : null, smooth ? presence(Interpolate) : null, presence(Tiling), presence(NineSlice)],

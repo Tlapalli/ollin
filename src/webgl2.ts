@@ -65,7 +65,10 @@ void main() {
     v_size = vec4(size, source);
     v_local = a_corner * size;
     // Tiling: a repetition is w x h pixels (0 = the frame's size), shifted by x, y. NineSlice: the four borders.
-    v_params = v_mode == 1 ? vec4(F(10) > 0.0 ? F(10) : source.x, F(11) > 0.0 ? F(11) : source.y, F(12), F(13)) : vec4(F(14), F(15), F(16), F(17));
+    // NineSlice works in image pixels scaled by its scale: the frame and its borders are scale times bigger.
+    float k = v_mode == 2 ? max(F(18), 1e-4) : 1.0;
+    v_size.zw = source * k;
+    v_params = v_mode == 1 ? vec4(F(10) > 0.0 ? F(10) : source.x, F(11) > 0.0 ? F(11) : source.y, F(12), F(13)) : vec4(F(14), F(15), F(16), F(17)) * k;
     trim = vec4(0.0, 0.0, 1.0, 1.0); // both fill the whole sprite
   }
   // Mirroring is free: the corner moves to the other side of the sprite, trimmed frames included.
