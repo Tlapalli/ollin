@@ -21,7 +21,7 @@ struct Frame { viewProj: mat4x4f, time: f32, blend: f32, stride: u32 }
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
-struct Grid { cell: vec4f, grid: vec4f } // frame size u, v, step u, v; margin u, v, columns, first atlas texel or -1
+struct Grid { cell: vec4f, grid: vec4f, size: vec4f } // frame size u, v, step u, v; margin u, v, columns, first atlas texel or -1; image px
 @group(1) @binding(2) var<uniform> grid: Grid;
 // The ECS component arrays, uploaded as they are: one layer of \`stride\` entities per field (see SpriteData).
 @group(2) @binding(0) var<storage, read> floats: array<f32>;
@@ -41,6 +41,12 @@ struct Fragment {
   @builtin(position) position: vec4f,
   @location(0) uv: vec2f,
   @location(1) tint: vec4f,
+  // Tiling and NineSlice pick their UVs per pixel, in fs. Zero (mode 0) for plain sprites and particles.
+  @location(2) local: vec2f,
+  @location(3) @interpolate(flat) rect: vec4f,
+  @location(4) @interpolate(flat) params: vec4f,
+  @location(5) @interpolate(flat) size: vec4f,
+  @location(6) @interpolate(flat) mode: u32,
 }
 
 // Sprites arrive as entity ids; everything else is read from the component arrays.
@@ -68,16 +74,31 @@ struct Fragment {
     uv = grid.grid.xy + vec2f(f32(f % columns), f32(f / columns)) * grid.cell.zw;
     cell = grid.cell.xy;
   }
+  var out: Fragment;
+  let size = vec2f(F(3u, e), F(4u, e));
+  out.mode = select(select(0u, 2u, B(6u, e) == 1u), 1u, B(5u, e) == 1u);
+  if (out.mode != 0u) {
+    let source = cell * grid.size.xy; // the frame's size in image pixels
+    out.rect = vec4f(uv, cell);
+    out.size = vec4f(size, source);
+    out.local = corner * size;
+    // Tiling: a repetition is w x h pixels (0 = the frame's size), shifted by x, y. NineSlice: the four borders.
+    if (out.mode == 1u) {
+      out.params = vec4f(select(source.x, F(10u, e), F(10u, e) > 0.0), select(source.y, F(11u, e), F(11u, e) > 0.0), F(12u, e), F(13u, e));
+    } else {
+      out.params = vec4f(F(14u, e), F(15u, e), F(16u, e), F(17u, e));
+    }
+    trim = vec4f(0.0, 0.0, 1.0, 1.0); // both fill the whole sprite
+  }
   // Mirroring is free: the corner moves to the other side of the sprite, trimmed frames included.
   var at01 = trim.xy + corner * trim.zw;
   if (B(0u, e) != 0u) { at01.x = 1.0 - at01.x; }
   if (B(1u, e) != 0u) { at01.y = 1.0 - at01.y; }
   let tint = U(1u, e);
-  let local = (at01 - 0.5) * vec2f(F(3u, e), F(4u, e));
+  let local = (at01 - 0.5) * size;
   let c = cos(angle);
   let n = sin(angle);
   let world = position.xy + vec2f(local.x * c - local.y * n, local.x * n + local.y * c);
-  var out: Fragment;
   out.position = frame.viewProj * vec4f(world, position.z, 1.0);
   // The shared ortho matrix targets WebGL's -1..1 depth range; WebGPU clips to 0..1.
   out.position.z = out.position.z * 0.5 + 0.5;
@@ -112,9 +133,22 @@ struct Particle {
   return out;
 }
 
+// Sprite pixel p of a sprite \`size\` long to a pixel of a \`source\`-long frame whose borders a, b stay unscaled.
+fn slice(p: f32, size: f32, source: f32, a: f32, b: f32) -> f32 {
+  if (p < a) { return p; }
+  if (p > size - b) { return source - (size - p); }
+  return a + (p - a) * (source - a - b) / max(size - a - b, 1e-4);
+}
+
 // Textures are premultiplied, so alpha scales every channel.
 @fragment fn fs(f: Fragment) -> @location(0) vec4f {
-  return textureSample(tex, samp, f.uv) * vec4f(f.tint.rgb, 1.0) * f.tint.a;
+  var uv = f.uv;
+  if (f.mode == 1u) {
+    uv = f.rect.xy + fract((f.local - f.params.zw) / f.params.xy) * f.rect.zw;
+  } else if (f.mode == 2u) {
+    uv = f.rect.xy + vec2f(slice(f.local.x, f.size.x, f.size.z, f.params.x, f.params.y), slice(f.local.y, f.size.y, f.size.w, f.params.z, f.params.w)) / f.size.zw * f.rect.zw;
+  }
+  return textureSample(tex, samp, uv) * vec4f(f.tint.rgb, 1.0) * f.tint.a;
 }`
 
 /**
@@ -140,9 +174,9 @@ interface GpuTexture {
 // Component layers start at multiples of this many entities, so every layer (bytes included) is 256-byte aligned.
 const LAYER_ALIGN = 64
 // Layer counts per type, as in SpriteData.
-const FLOAT_LAYERS = 10
+const FLOAT_LAYERS = 18
 const UINT_LAYERS = 2
-const BYTE_LAYERS = 5
+const BYTE_LAYERS = 7
 
 function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background: [number, number, number, number]): Backend<GpuTexture, GPUBuffer> {
   const context = canvas.getContext('webgpu') as GPUCanvasContext | null
@@ -212,8 +246,8 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
   const textureGroup = (t: Texture<GpuTexture>) => {
     let group = textureGroups.get(t)
     if (!group) {
-      const grid = device.createBuffer({ size: 32, usage: BUFFER_UNIFORM | BUFFER_COPY_DST })
-      device.queue.writeBuffer(grid, 0, new Float32Array([t.fu, t.fv, t.su, t.sv, t.mu, t.mv, t.columns, t.frames]))
+      const grid = device.createBuffer({ size: 48, usage: BUFFER_UNIFORM | BUFFER_COPY_DST })
+      device.queue.writeBuffer(grid, 0, new Float32Array([t.fu, t.fv, t.su, t.sv, t.mu, t.mv, t.columns, t.frames, t.width, t.height, 0, 0]))
       group = device.createBindGroup({
         layout: textureLayout,
         entries: [
@@ -272,7 +306,7 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
     },
     sprites(next) {
       data = next
-      stride = Math.ceil(next.floats[0].length / LAYER_ALIGN) * LAYER_ALIGN
+      stride = Math.ceil(next.floats[0]!.length / LAYER_ALIGN) * LAYER_ALIGN
       new Float32Array(params, 0, 1)[0] = next.blend
       new Uint32Array(params, 4, 1)[0] = stride
       device.queue.writeBuffer(uniforms, 68, params)
@@ -326,17 +360,14 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
         while (pool.length && pool[pool.length - 1].size < bytes) pool.pop()!.destroy()
         staging = pool.pop() ?? device.createBuffer({ size: gpu.size, usage: BUFFER_MAP_WRITE | BUFFER_COPY_SRC, mappedAtCreation: true })
         const mapped = new Uint8Array(staging.getMappedRange(0, bytes))
-        const { count, blend, floats, uints, bytes: flags } = data
-        // Interpolate layers (the last ones) are only read when something interpolates.
-        const write = (arrays: ArrayBufferView[], layers: number, at: number, size: number) => {
-          for (let l = 0; l < layers; l++) {
-            const a = arrays[l]
-            mapped.set(new Uint8Array(a.buffer, a.byteOffset, count * size), at + l * stride * size)
-          }
+        const { count, floats, uints, bytes: flags } = data
+        // Null layers are not read this frame (see SpriteData).
+        const write = (arrays: (ArrayBufferView | null)[], at: number, size: number) => {
+          arrays.forEach((a, l) => a && mapped.set(new Uint8Array(a.buffer, a.byteOffset, count * size), at + l * stride * size))
         }
-        write(floats, blend >= 0 ? FLOAT_LAYERS : FLOAT_LAYERS - 3, 0, 4)
-        write(uints, UINT_LAYERS, floatBytes, 4)
-        write(flags, blend >= 0 ? BYTE_LAYERS : BYTE_LAYERS - 2, floatBytes + uintBytes, 1)
+        write(floats, 0, 4)
+        write(uints, floatBytes, 4)
+        write(flags, floatBytes + uintBytes, 1)
         new Uint32Array(mapped.buffer, idsAt, used).set(ids.subarray(0, used))
         staging.unmap()
         encoder.copyBufferToBuffer(staging, 0, gpu, 0, bytes)

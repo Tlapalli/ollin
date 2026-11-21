@@ -20,6 +20,20 @@ export const Sprite = defineComponent(
 )
 
 /**
+ * Repeats the sprite's frame to fill the sprite instead of stretching it: scrolling backgrounds, parallax layers,
+ * water, floors. Each repetition is `w` x `h` pixels (0, the default, means the frame's own size in the image), and
+ * `x`/`y` move the pattern by that many pixels, so `Tiling.x[e] = camera.x * 0.5` scrolls it at half speed.
+ * With linear filtering a faint seam can show where the pattern wraps; pixel art (`nearest`) tiles cleanly.
+ */
+export const Tiling = defineComponent({ w: f32, h: f32, x: f32, y: f32 })
+
+/**
+ * Nine-slice scaling for UI panels, buttons and dialog boxes: the borders (in image pixels) keep their size and only
+ * the middle stretches, so one small image fits any `Sprite.w`/`h`. `[NineSlice, { left: 8, right: 8, top: 8, bottom: 8 }]`.
+ */
+export const NineSlice = defineComponent({ left: f32, right: f32, top: f32, bottom: f32 })
+
+/**
  * Draws the entity between its last two fixed-tick transforms (by `game.fixedAlpha`), for things that move in `fixed`
  * or `physics` systems: without it they step at 60 Hz and judder on 120 Hz screens. Rapier bodies get it
  * automatically. Don't add it to things moved in `update`; they are already drawn where they are.

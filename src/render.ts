@@ -1,5 +1,5 @@
 import { Camera, createCamera } from './camera'
-import { animation, Interpolate, Position, Rotation, Sprite } from './components'
+import { animation, Interpolate, NineSlice, Position, Rotation, Sprite, Tiling } from './components'
 import { token, type Game } from './core'
 import { presence } from './ecs'
 import { parseAtlas, type AtlasTag } from './atlas'
@@ -181,21 +181,28 @@ const POOL_SIZE = 8192
 
 /**
  * The component arrays the sprite shader reads by entity id, uploaded as they are each frame (no packing on the CPU).
- * `count` is the highest entity id drawn + 1. Interpolate arrays are only read when `blend >= 0`.
- * floats: Position x, y, z, Sprite w, h, Rotation angle, Sprite alpha, Interpolate x, y, angle.
- * uints: Sprite frame, tint. bytes: Sprite flipX, flipY, has Rotation, Interpolate ready, has Interpolate.
+ * `count` is the highest entity id drawn + 1. A `null` layer is not uploaded this frame because nothing reads it:
+ * Interpolate fields when `blend < 0`, Tiling and NineSlice fields while no entity has them (their presence bytes are
+ * always uploaded, so the shader never reads a stale layer).
+ * floats: Position x, y, z, Sprite w, h, Rotation angle, Sprite alpha, Interpolate x, y, angle, Tiling w, h, x, y,
+ * NineSlice left, right, top, bottom.
+ * uints: Sprite frame, tint. bytes: Sprite flipX, flipY, has Rotation, Interpolate ready, has Interpolate,
+ * has Tiling, has NineSlice.
  */
 export interface SpriteData {
   count: number
   blend: number
-  floats: Float32Array[]
+  floats: (Float32Array | null)[]
   uints: Uint32Array[]
-  bytes: Uint8Array[]
+  bytes: (Uint8Array | null)[]
 }
 
 /** A texture plus its frame grid in UV units. */
 export interface Texture<T = unknown> {
   handle: T
+  /** Image size in pixels. */
+  width: number
+  height: number
   columns: number
   /** Frame size. */
   fu: number
@@ -415,6 +422,8 @@ export function createRenderer(game: Game, backend: Backend) {
     return (
       textures.push({
         handle: backend.createTexture(img, options.filter ?? 'linear'),
+        width,
+        height,
         columns: Math.max(1, Math.floor((width - 2 * margin + spacing) / (frameWidth + spacing))),
         fu: frameWidth / width,
         fv: frameHeight / height,
@@ -504,6 +513,8 @@ export function createRenderer(game: Game, backend: Backend) {
   // runs before the game's, so this sees the state the last tick left).
   const interpolated = world.query(Interpolate, Position)
   world.query(Rotation) // registers Rotation, so its arrays exist for the upload even if no entity has used it yet
+  const tiled = world.query(Tiling)
+  const sliced = world.query(NineSlice)
   game.system(() => {
     const { x, y, angle: a, ready } = Interpolate
     for (const e of interpolated.entities) {
@@ -647,12 +658,20 @@ export function createRenderer(game: Game, backend: Backend) {
     camera.viewProj(viewProj)
     ortho(screenProj, 0, width, height, 0, -1000, 1000)
     backend.begin(width, height, viewProj, screenProj, time)
+    const smooth = interpolated.entities.length > 0
+    const tiling = tiled.entities.length > 0
+    const slicing = sliced.entities.length > 0
     backend.sprites({
       count: top,
-      blend: interpolated.entities.length ? game.fixedAlpha : -1,
-      floats: [Position.x, Position.y, Position.z, Sprite.w, Sprite.h, Rotation.angle, Sprite.alpha, Interpolate.x, Interpolate.y, Interpolate.angle],
+      blend: smooth ? game.fixedAlpha : -1,
+      floats: [
+        Position.x, Position.y, Position.z, Sprite.w, Sprite.h, Rotation.angle, Sprite.alpha,
+        ...(smooth ? [Interpolate.x, Interpolate.y, Interpolate.angle] : [null, null, null]),
+        ...(tiling ? [Tiling.w, Tiling.h, Tiling.x, Tiling.y] : [null, null, null, null]),
+        ...(slicing ? [NineSlice.left, NineSlice.right, NineSlice.top, NineSlice.bottom] : [null, null, null, null]),
+      ],
       uints: [Sprite.frame, Sprite.tint],
-      bytes: [Sprite.flipX, Sprite.flipY, presence(Rotation), Interpolate.ready, presence(Interpolate)],
+      bytes: [Sprite.flipX, Sprite.flipY, presence(Rotation), smooth ? Interpolate.ready : null, smooth ? presence(Interpolate) : null, presence(Tiling), presence(NineSlice)],
     })
     const live = [...pools.values()].filter((p) => p.until > time)
     for (const zKey of [...new Set([...layers.keys(), ...sortedLayers.keys(), ...live.map((p) => p.z)])].sort((a, b) => a - b)) {

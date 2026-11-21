@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { Interpolate, Position, Sprite } from './components'
+import { Interpolate, NineSlice, Position, Sprite, Tiling } from './components'
 import { createGame } from './core'
 import { createRenderer, FLOATS_PER_PARTICLE, Renderer, type Backend, type SpriteData } from './render'
 
@@ -17,17 +17,18 @@ const setup = async () => {
   const writes: [first: number, count: number][] = []
   const particleDraws: number[] = []
   let data: SpriteData
+  const uploads: SpriteData[] = []
   const backend: Backend = {
     name: 'webgl2',
     createTexture: () => ({}),
     begin() {},
     end() {},
     frames() {},
-    sprites: (d) => void (data = d),
+    sprites: (d) => void uploads.push((data = d)),
     // Records the x each sprite is drawn at, the way the shaders compute it from the uploaded component arrays.
     draw: (ids, count) => {
-      const [x, , , , , , , ix] = data.floats
-      const [, , , ready, interpolated] = data.bytes
+      const [x, , , , , , , ix] = data.floats as Float32Array[]
+      const [, , , ready, interpolated] = data.bytes as Uint8Array[]
       for (const e of ids.subarray(0, count)) {
         expect(e).toBeLessThan(data.count)
         sprites.push(data.blend >= 0 && ready[e] && interpolated[e] ? ix[e] + (x[e] - ix[e]) * data.blend : x[e])
@@ -39,7 +40,7 @@ const setup = async () => {
   }
   const game = await createGame({ canvas: { width: 100, height: 100 } as HTMLCanvasElement, fixedDt: 0.1, plugins: [(g) => createRenderer(g, backend)] })
   const texture = await game.get(Renderer).loadTexture('a.png', { frameWidth: 16, frameHeight: 16 })
-  return { game, texture, sprites, writes, particleDraws }
+  return { game, texture, sprites, writes, particleDraws, uploads }
 }
 
 it('draws Interpolate entities between their last two fixed ticks', async () => {
@@ -125,4 +126,23 @@ it('reuses batches while nothing changes, and rebuilds them when a z, texture or
   expect(frame()).toEqual([5])
   game.world.spawn([Position, { x: 9 }], [Sprite, { w: 1, h: 1, texture }])
   expect(frame()).toEqual([5, 9])
+})
+
+it('uploads Tiling and NineSlice fields only while some entity has them, and their presence always', async () => {
+  const { game, texture, uploads } = await setup()
+  const e = game.world.spawn([Position], [Sprite, { w: 64, h: 64, texture }])
+  game.step(0)
+  let last = uploads.at(-1)!
+  expect(last.floats.slice(10).every((a) => a === null)).toBe(true)
+  expect(last.bytes[5]).not.toBeNull() // presence is always fresh, so a stale layer is never read
+  expect(last.bytes[6]).not.toBeNull()
+  game.world.add(e, Tiling, { w: 16, h: 16 })
+  game.step(0)
+  last = uploads.at(-1)!
+  expect(last.floats.slice(10, 14)).toEqual([Tiling.w, Tiling.h, Tiling.x, Tiling.y])
+  expect(last.floats.slice(14).every((a) => a === null)).toBe(true)
+  expect(last.bytes[5]![e]).toBe(1)
+  game.world.add(e, NineSlice, { left: 4 })
+  game.step(0)
+  expect(uploads.at(-1)!.floats.slice(14)).toEqual([NineSlice.left, NineSlice.right, NineSlice.top, NineSlice.bottom])
 })
