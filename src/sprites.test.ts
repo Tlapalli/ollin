@@ -60,6 +60,21 @@ describe('spawnText', () => {
     expect(text.entities.map((e) => Sprite.frame[e])).toEqual(['ñ', 'á', 'é', 'ā', '?'].map((c) => glyphs.get(c)))
   })
 
+  it('wraps at spaces to maxWidth, breaks words wider than a line, and keeps explicit newlines', () => {
+    const world = new World()
+    const lines = (value: string, maxWidth: number) => {
+      const text = spawnText(world, font, value, { maxWidth })
+      const rows = new Map<number, string>()
+      for (const e of text.entities) rows.set(Position.y[e], (rows.get(Position.y[e]) ?? '') + [...glyphs.keys()][Sprite.frame[e]])
+      return { rows: [...rows.values()], width: text.width }
+    }
+    // 6 px per character: "the quick" is 54 px, wider than 40.
+    expect(lines('the quick fox', 40)).toEqual({ rows: ['the', 'quick', 'fox'], width: 30 })
+    expect(lines('the fox ran', 48)).toEqual({ rows: ['thefox', 'ran'], width: 42 }) // spaces spawn no sprite but take 6 px
+    expect(lines('abcdefghij yo', 40).rows).toEqual(['abcdef', 'ghij', 'yo'])
+    expect(lines('ab\ncd ef', 100).rows).toEqual(['ab', 'cdef'])
+  })
+
   it('tints and fades the whole text, and keeps the style across set', () => {
     const world = new World()
     const text = spawnText(world, font, 'ab', { tint: 0x112233 })
