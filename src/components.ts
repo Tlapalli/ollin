@@ -43,6 +43,62 @@ export const NineSlice = defineComponent({ left: f32, right: f32, top: f32, bott
 export const Interpolate = defineComponent({ x: f32, y: f32, angle: f32, ready: u8 })
 
 /**
+ * Attaches an entity to a parent (set it with `attach`): every frame, before drawing, its `Position` becomes the
+ * parent's drawn position plus (`x`, `y`) turned by the parent's `Rotation`, its `z` the parent's plus `z`, and
+ * its `Rotation` (if it has one) the parent's plus `angle`. A weapon in a hand, a health bar over an enemy, a
+ * group of UI elements. Chains work. When the parent is despawned, the child is despawned with it.
+ */
+export const Parent = defineComponent({ entity: u32, generation: u32, x: f32, y: f32, z: f32, angle: f32 })
+
+/** Attaches `child` to `parent` at an offset: `attach(world, sword, hero, { x: 12, y: -4 })`. See `Parent`. */
+export function attach(world: World, child: Entity, parent: Entity, offset: { x?: number; y?: number; z?: number; angle?: number } = {}) {
+  world.add(child, Parent, { ...offset, entity: parent, generation: world.generation(parent) })
+}
+
+/** The system that places `Parent` children; the renderer registers it to run right before drawing. */
+export const hierarchy = (game: Game): System => {
+  const { world } = game
+  const children = world.query(Parent, Position)
+  // Frame stamps, so each child is placed once and after its own parent, whatever the query order.
+  let placed = new Uint32Array(0)
+  let frame = 0
+  const place = (e: Entity): boolean => {
+    if (e >= placed.length) {
+      const next = new Uint32Array(Math.max(e + 1, placed.length * 2))
+      next.set(placed)
+      placed = next
+    }
+    if (placed[e] === frame) return world.has(e, Position)
+    placed[e] = frame
+    const p = Parent.entity[e]
+    // The parent is gone when its generation moved on (despawned, maybe recycled), or a parent up the chain is.
+    if (world.generation(p) !== Parent.generation[e] || !world.has(p, Position) || (world.has(p, Parent) && !place(p))) {
+      world.despawn(e)
+      return false
+    }
+    const at = drawnPosition(game, p)
+    const angle = world.has(p, Rotation) ? Rotation.angle[p] : 0
+    const c = Math.cos(angle)
+    const s = Math.sin(angle)
+    const ox = Parent.x[e]
+    const oy = Parent.y[e]
+    Position.x[e] = at.x + ox * c - oy * s
+    Position.y[e] = at.y + ox * s + oy * c
+    Position.z[e] = Position.z[p] + Parent.z[e]
+    if (world.has(e, Rotation)) Rotation.angle[e] = angle + Parent.angle[e]
+    return true
+  }
+  return () => {
+    frame++
+    const list = children.entities
+    // Backwards, because a despawn swaps the last child into the hole.
+    for (let i = list.length - 1; i >= 0; i--) {
+      place(list[i])
+    }
+  }
+}
+
+/**
  * Where the renderer draws an entity this frame: `Position`, or between its last two fixed-tick positions for
  * `Interpolate` entities. Follow this with the camera, or a smoothly drawn player looks like it shakes.
  */

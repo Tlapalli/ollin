@@ -1,5 +1,5 @@
 import { Camera, createCamera } from './camera'
-import { animation, Interpolate, NineSlice, Position, Rotation, Sprite, Tiling } from './components'
+import { animation, hierarchy, Interpolate, NineSlice, Position, Rotation, Sprite, Tiling } from './components'
 import { token, type Game } from './core'
 import { presence } from './ecs'
 import { parseAtlas, type AtlasTag } from './atlas'
@@ -508,6 +508,7 @@ export function createRenderer(game: Game, backend: Backend) {
   const { world } = game
   const sprites = world.query(Position, Sprite)
   game.system(animation(world))
+  game.system(hierarchy(game), 'render') // before the render system below, so children are drawn where they belong
 
   // Interpolation: record each Interpolate entity's transform at the start of every fixed tick (the renderer's plugin
   // runs before the game's, so this sees the state the last tick left).
