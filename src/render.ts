@@ -53,6 +53,11 @@ export interface Renderer {
    */
   additive: Set<number>
   /**
+   * Clips z layers to a rectangle in canvas pixels ((0, 0) is the top-left corner): scrolling lists, minimaps, windows.
+   * `renderer.clip.set(100, { x: 20, y: 80, w: 300, h: 200 })`; `renderer.clip.delete(100)` removes it.
+   */
+  clip: Map<number, Clip>
+  /**
    * Renders a font (a CSS family, including web fonts) into a texture for `spawnText`: ASCII, accented Latin letters,
    * ñ, ¿, ¡ and Nahuatl macron vowels, plus `chars`. Glyphs are white so tint colors them. Cached by options.
    */
@@ -64,6 +69,21 @@ export interface Renderer {
   burst(options: BurstOptions): void
   /** Last frame's totals, for profiling (`devtools()` shows them). */
   readonly stats: { drawCalls: number; sprites: number }
+}
+
+/** A rectangle in canvas pixels, (0, 0) at the top-left corner. */
+export interface Clip {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** How the draws of one z layer go: canvas-pixel projection, additive blending, and a clip rectangle or null. */
+export interface LayerState {
+  screen: boolean
+  additive: boolean
+  clip: Clip | null
 }
 
 /** Options for `renderer.loadAtlas`. */
@@ -154,14 +174,16 @@ export interface Backend<T = unknown, P = unknown> {
   frames(table: Float32Array): void
   /** Uploads this frame's component arrays (see `SpriteData`) before any `draw`. */
   sprites(data: SpriteData): void
+  /** Sets how the next draws go, once per z layer. */
+  layer(state: LayerState): void
   /** Draws `count` sprites given by entity id. `ids` is reused right after, so upload or copy it now. */
-  draw(ids: Uint32Array, count: number, texture: Texture<T>, screen: boolean, additive: boolean): void
+  draw(ids: Uint32Array, count: number, texture: Texture<T>): void
   /** A GPU buffer for `max` particles. */
   createParticles(max: number): P
   /** Writes particles (`FLOATS_PER_PARTICLE` floats each) starting at slot `first`. */
   writeParticles(pool: P, first: number, data: Float32Array): void
   /** Draws the first `count` slots of a pool; slots not alive at the frame's time draw nothing. */
-  drawParticles(pool: P, count: number, texture: Texture<T>, screen: boolean, additive: boolean): void
+  drawParticles(pool: P, count: number, texture: Texture<T>): void
   end(): void
 }
 
@@ -308,6 +330,7 @@ export function createRenderer(game: Game, backend: Backend) {
   const ySort = new Set<number>()
   const screen = new Set<number>()
   const additive = new Set<number>()
+  const clip = new Map<number, Clip>()
   const scratch = newBatch()
   const stats = { drawCalls: 0, sprites: 0 }
   const camera = createCamera(game.canvas.width, game.canvas.height)
@@ -478,6 +501,7 @@ export function createRenderer(game: Game, backend: Backend) {
     ySort,
     screen,
     additive,
+    clip,
     stats,
     burst,
     loadFont(options = {}) {
@@ -537,10 +561,8 @@ export function createRenderer(game: Game, backend: Backend) {
     b.ids[b.count++] = e
   }
 
-  let onScreen = false
-  let adding = false
   const draw = (b: Batch, texture: number) => {
-    backend.draw(b.ids, b.count, textures[texture], onScreen, adding)
+    backend.draw(b.ids, b.count, textures[texture])
     stats.drawCalls++
     stats.sprites += b.count
   }
@@ -676,8 +698,7 @@ export function createRenderer(game: Game, backend: Backend) {
     })
     const live = [...pools.values()].filter((p) => p.until > time)
     for (const zKey of [...new Set([...layers.keys(), ...sortedLayers.keys(), ...live.map((p) => p.z)])].sort((a, b) => a - b)) {
-      onScreen = screen.has(zKey)
-      adding = additive.has(zKey)
+      backend.layer({ screen: screen.has(zKey), additive: additive.has(zKey), clip: clip.get(zKey) ?? null })
       const layer = sortedLayers.get(zKey)
       if (layer) {
         if (layer.count) drawSorted(layer)
@@ -697,7 +718,7 @@ export function createRenderer(game: Game, backend: Backend) {
       }
       for (const pool of live) {
         if (pool.z !== zKey) continue
-        backend.drawParticles(pool.handle, pool.used, textures[pool.texture], onScreen, adding)
+        backend.drawParticles(pool.handle, pool.used, textures[pool.texture])
         stats.drawCalls++
       }
     }

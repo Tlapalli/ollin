@@ -265,6 +265,9 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
   let bound: Float32Array | undefined
   /** Whether the sprite program and buffers are bound (particle draws switch them). */
   let sprites = false
+  /** Canvas height, to flip clip rectangles to GL's bottom-left origin. */
+  let canvasHeight = 0
+  let onScreen = false
 
   return {
     name: 'webgl2',
@@ -286,6 +289,8 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
       screen = screenProj
       time = now
       sprites = false
+      canvasHeight = height
+      gl.disable(gl.SCISSOR_TEST) // a clip left from last frame would clip the clear
       gl.viewport(0, 0, width, height)
       gl.clearColor(...background)
       gl.clear(gl.COLOR_BUFFER_BIT)
@@ -305,8 +310,16 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
       gl.uniform1f(uBlend, blend)
       sprites = false
     },
-    draw(ids, count, texture, onScreen, additive) {
+    layer({ screen: layerScreen, additive, clip }) {
+      onScreen = layerScreen
       blend(additive)
+      if (!clip) gl.disable(gl.SCISSOR_TEST)
+      else {
+        gl.enable(gl.SCISSOR_TEST)
+        gl.scissor(Math.round(clip.x), Math.round(canvasHeight - clip.y - clip.h), Math.max(0, Math.round(clip.w)), Math.max(0, Math.round(clip.h)))
+      }
+    },
+    draw(ids, count, texture) {
       if (!sprites) {
         gl.useProgram(program)
         gl.bindVertexArray(vao)
@@ -349,8 +362,7 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
       gl.bufferSubData(gl.ARRAY_BUFFER, first * FLOATS_PER_PARTICLE * 4, data)
       sprites = false
     },
-    drawParticles(pool, count, texture, onScreen, additive) {
-      blend(additive)
+    drawParticles(pool, count, texture) {
       gl.useProgram(particleProgram)
       gl.uniformMatrix4fv(uParticleViewProj, false, onScreen ? screen : view)
       gl.uniform1f(uTime, time)

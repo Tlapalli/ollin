@@ -24,6 +24,7 @@ const setup = async () => {
     begin() {},
     end() {},
     frames() {},
+    layer() {},
     sprites: (d) => void uploads.push((data = d)),
     // Records the x each sprite is drawn at, the way the shaders compute it from the uploaded component arrays.
     draw: (ids, count) => {
