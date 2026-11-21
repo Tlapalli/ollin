@@ -13,6 +13,8 @@
 - Breaking for custom renderer backends only: `Backend.layer(state)` sets screen, additive and clip per z layer;
   `draw` and `drawParticles` lose those arguments.
 - `spawnText(..., { maxWidth })` wraps text at spaces for dialog boxes; words wider than a line break where they must.
+- Fonts: cells fit each glyph's real ink, so accents over capitals and descenders no longer bleed into neighbors as
+  stray marks; typographic punctuation (– — ‘ ’ “ ” …) is in every font by default.
 - `NineSlice.scale` draws the borders bigger, for pixel art UI scaled to the screen.
 - `NineSlice` keeps a frame's borders at their size and stretches the middle: UI panels, buttons, dialog boxes.
 

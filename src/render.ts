@@ -474,18 +474,25 @@ export function createRenderer(game: Game, backend: Backend) {
     const ctx = canvas.getContext('2d')!
     ctx.font = css
     const chars = [...new Set(DEFAULT_CHARS + extra.normalize('NFC'))]
-    const advances = chars.map((c) => ctx.measureText(c).width)
-    // One padded cell per glyph, 16 per row, so the font is an ordinary spritesheet.
-    const cellWidth = Math.ceil(Math.max(...advances)) + 2
-    const cellHeight = Math.ceil(size * 1.3) + 2
+    ctx.textBaseline = 'top'
+    const metrics = chars.map((c) => ctx.measureText(c))
+    const advances = metrics.map((m) => m.width)
+    // One cell per glyph, 16 per row, so the font is an ordinary spritesheet. Cells fit every glyph's real ink (accents
+    // over capitals and descenders reach past the em box) plus 2 px of padding, so no glyph bleeds into a neighbor.
+    const PAD = 2
+    const max = (f: (m: TextMetrics) => number) => Math.ceil(Math.max(0, ...metrics.map(f)))
+    const originX = PAD + max((m) => m.actualBoundingBoxLeft)
+    const originY = PAD + max((m) => m.actualBoundingBoxAscent)
+    const cellWidth = originX + Math.max(max((m) => m.actualBoundingBoxRight), Math.ceil(Math.max(...advances))) + PAD
+    const cellHeight = originY + Math.max(max((m) => m.actualBoundingBoxDescent), Math.ceil(size * 1.2)) + PAD
     canvas.width = cellWidth * 16
     canvas.height = cellHeight * Math.ceil(chars.length / 16)
     ctx.font = css // resizing the canvas resets the context
     ctx.fillStyle = '#fff'
     ctx.textBaseline = 'top'
-    chars.forEach((c, i) => ctx.fillText(c, (i % 16) * cellWidth + 1, Math.floor(i / 16) * cellHeight + 1))
+    chars.forEach((c, i) => ctx.fillText(c, (i % 16) * cellWidth + originX, Math.floor(i / 16) * cellHeight + originY))
     const texture = createTexture(canvas, { frameWidth: cellWidth, frameHeight: cellHeight, filter })
-    return { texture, size, cellWidth, cellHeight, lineHeight: Math.ceil(size * 1.2), glyphs: new Map(chars.map((c, i) => [c, i])), advances }
+    return { texture, size, cellWidth, cellHeight, originX, originY, lineHeight: Math.ceil(size * 1.2), glyphs: new Map(chars.map((c, i) => [c, i])), advances }
   }
 
   game.set(Camera, camera)
