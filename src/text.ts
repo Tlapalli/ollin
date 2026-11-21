@@ -2,12 +2,14 @@ import { Position, Sprite } from './components'
 import type { Entity, World } from './ecs'
 
 /**
- * Characters every font gets: printable ASCII, Latin-1 (accents, ñ, ¿, ¡, ü: Spanish, Portuguese, French, German...)
- * and the macron vowels of Classical Nahuatl. Add more with `renderer.loadFont({ chars: '←→♥' })`.
+ * Characters every font gets: printable ASCII, Latin-1 (accents, ñ, ¿, ¡, ü: Spanish, Portuguese, French, German...),
+ * typographic punctuation (– — ‘ ’ “ ” …) and the macron vowels of Classical Nahuatl. Add more with
+ * `renderer.loadFont({ chars: '←→♥' })`.
  */
 export const DEFAULT_CHARS =
   Array.from({ length: 95 }, (_, i) => String.fromCharCode(32 + i)).join('') +
   Array.from({ length: 95 }, (_, i) => String.fromCharCode(0xa1 + i)).join('') +
+  '–—‘’“”…' +
   'āēīōūĀĒĪŌŪ'
 
 /** A font rendered into a spritesheet, one cell per character. See `renderer.loadFont`. */
@@ -17,6 +19,9 @@ export interface Font {
   size: number
   cellWidth: number
   cellHeight: number
+  /** Where each glyph's origin (its left edge and top line) sits inside its cell, in pixels at `size`. Default 1. */
+  originX?: number
+  originY?: number
   lineHeight: number
   /** Spritesheet frame of each character. */
   glyphs: Map<string, number>
@@ -70,6 +75,8 @@ export function spawnText(world: World, font: Font, value: string, options: Text
   const { x = 0, y = 0, z = 0, size = font.size, align = 'left', maxWidth = Infinity } = options
   const scale = size / font.size
   const w = font.cellWidth * scale
+  const ox = (font.originX ?? 1) * scale
+  const oy = (font.originY ?? 1) * scale
   const h = font.cellHeight * scale
   const fallback = font.glyphs.get('?') ?? 0
   const glyph = (c: string) => {
@@ -144,11 +151,11 @@ export function spawnText(world: World, font: Font, value: string, options: Text
         let cursor = x - (align === 'center' ? widths[row] / 2 : align === 'right' ? widths[row] : 0)
         for (const c of line) {
           const frame = glyph(c)
-          // Glyphs are drawn 1 px into their cell, and sprites are centered on Position.
+          // Glyphs are drawn at (originX, originY) inside their cell, and sprites are centered on Position.
           if (c !== ' ') {
             text.entities.push(
               world.spawn(
-                [Position, { x: cursor - scale + w / 2, y: y + row * font.lineHeight * scale - scale + h / 2, z }],
+                [Position, { x: cursor - ox + w / 2, y: y + row * font.lineHeight * scale - oy + h / 2, z }],
                 [Sprite, { w, h, texture: font.texture, frame, tint, alpha }],
               ),
             )
