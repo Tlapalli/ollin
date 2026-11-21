@@ -3,6 +3,7 @@
 ## Unreleased
 
 - `Tiling` repeats a sprite's frame to fill it, with a scroll offset: scrolling backgrounds, parallax, water, floors.
+- `spawnText(..., { maxWidth })` wraps text at spaces for dialog boxes; words wider than a line break where they must.
 - `NineSlice` keeps a frame's borders at their size and stretches the middle: UI panels, buttons, dialog boxes.
 
 ## 0.1.0-alpha.2
