@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- `Tiling` repeats a sprite's frame to fill it, with a scroll offset: scrolling backgrounds, parallax, water, floors.
+- `NineSlice` keeps a frame's borders at their size and stretches the middle: UI panels, buttons, dialog boxes.
+
 ## 0.1.0-alpha.2
 
 - Faster sprite rendering: the shaders read each sprite's components by entity id from the ECS arrays, uploaded as

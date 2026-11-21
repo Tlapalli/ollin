@@ -18,8 +18,15 @@ uniform float u_blend;
 uniform vec4 u_cell; // frame size u, v; step u, v
 uniform vec4 u_grid; // margin u, v; columns; first atlas texel, or -1 for a grid
 uniform highp sampler2D u_frames; // atlas frame table, 2 texels per frame (see Backend.frames)
+uniform vec2 u_texSize; // image size in pixels
 out vec2 v_uv;
 out vec4 v_tint;
+// Tiling and NineSlice pick their UVs per pixel, in the fragment shader (see SPRITE_FRAG).
+out vec2 v_local;
+flat out vec4 v_rect;
+flat out vec4 v_params;
+flat out vec4 v_size;
+flat out int v_mode;
 ivec2 at;
 float F(int layer) { return texelFetch(u_floats, ivec3(at, layer), 0).r; }
 uint U(int layer) { return texelFetch(u_uints, ivec3(at, layer), 0).r; }
@@ -50,13 +57,24 @@ void main() {
     cell = u_cell.xy;
   }
   v_uv = uv + a_corner * cell;
+  vec2 size = vec2(F(3), F(4));
+  v_mode = B(5) == 1u ? 1 : B(6) == 1u ? 2 : 0;
+  if (v_mode != 0) {
+    vec2 source = cell * u_texSize; // the frame's size in image pixels
+    v_rect = vec4(uv, cell);
+    v_size = vec4(size, source);
+    v_local = a_corner * size;
+    // Tiling: a repetition is w x h pixels (0 = the frame's size), shifted by x, y. NineSlice: the four borders.
+    v_params = v_mode == 1 ? vec4(F(10) > 0.0 ? F(10) : source.x, F(11) > 0.0 ? F(11) : source.y, F(12), F(13)) : vec4(F(14), F(15), F(16), F(17));
+    trim = vec4(0.0, 0.0, 1.0, 1.0); // both fill the whole sprite
+  }
   // Mirroring is free: the corner moves to the other side of the sprite, trimmed frames included.
   vec2 at01 = trim.xy + a_corner * trim.zw;
   if (B(0) != 0u) at01.x = 1.0 - at01.x;
   if (B(1) != 0u) at01.y = 1.0 - at01.y;
   uint tint = U(1);
   v_tint = vec4(vec3(uvec3(tint >> 16u, tint >> 8u, tint) & 255u) / 255.0, clamp(F(6), 0.0, 1.0));
-  vec2 local = (at01 - 0.5) * vec2(F(3), F(4));
+  vec2 local = (at01 - 0.5) * size;
   float c = cos(angle), s = sin(angle);
   vec2 world = position.xy + vec2(local.x * c - local.y * s, local.x * s + local.y * c);
   gl_Position = u_viewProj * vec4(world, position.z, 1.0);
@@ -92,6 +110,32 @@ out vec4 color;
 // Textures are premultiplied, so alpha scales every channel.
 void main() { color = texture(u_texture, v_uv) * vec4(v_tint.rgb, 1.0) * v_tint.a; }`
 
+// Sprites: Tiling repeats the frame (fract), NineSlice maps each pixel so the borders keep their size.
+const SPRITE_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D u_texture;
+in vec2 v_uv;
+in vec4 v_tint;
+in vec2 v_local;
+flat in vec4 v_rect;
+flat in vec4 v_params;
+flat in vec4 v_size;
+flat in int v_mode;
+out vec4 color;
+// Sprite pixel p of a sprite \`size\` long to a pixel of a \`source\`-long frame whose borders a, b stay unscaled.
+float slice(float p, float size, float source, float a, float b) {
+  if (p < a) return p;
+  if (p > size - b) return source - (size - p);
+  return a + (p - a) * (source - a - b) / max(size - a - b, 1e-4);
+}
+void main() {
+  vec2 uv = v_uv;
+  if (v_mode == 1) uv = v_rect.xy + fract((v_local - v_params.zw) / v_params.xy) * v_rect.zw;
+  else if (v_mode == 2) uv = v_rect.xy + vec2(slice(v_local.x, v_size.x, v_size.z, v_params.x, v_params.y), slice(v_local.y, v_size.y, v_size.w, v_params.z, v_params.w)) / v_size.zw * v_rect.zw;
+  // Textures are premultiplied, so alpha scales every channel.
+  color = texture(u_texture, uv) * vec4(v_tint.rgb, 1.0) * v_tint.a;
+}`
+
 function link(gl: WebGL2RenderingContext, vert: string, frag: string) {
   const program = gl.createProgram()
   gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, vert))
@@ -124,11 +168,12 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
   const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: true })
   if (!gl) throw new Error('WebGL2 is not available in this browser')
 
-  const program = link(gl, VERT, FRAG)
+  const program = link(gl, VERT, SPRITE_FRAG)
   const uViewProj = gl.getUniformLocation(program, 'u_viewProj')
   const uBlend = gl.getUniformLocation(program, 'u_blend')
   const uCell = gl.getUniformLocation(program, 'u_cell')
   const uGrid = gl.getUniformLocation(program, 'u_grid')
+  const uTexSize = gl.getUniformLocation(program, 'u_texSize')
   gl.useProgram(program)
   gl.uniform1i(gl.getUniformLocation(program, 'u_floats'), 1)
   gl.uniform1i(gl.getUniformLocation(program, 'u_uints'), 2)
@@ -174,7 +219,8 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
     { unit: 3, internal: gl.R8UI, format: gl.RED_INTEGER, type: gl.UNSIGNED_BYTE },
   ].map((k) => ({ ...k, texture: null as WebGLTexture | null, rows: 0, layers: 0 }))
   const unpack = gl.createBuffer()
-  const upload = (kind: (typeof kinds)[number], arrays: ArrayBufferView[], count: number, layers: number) => {
+  const upload = (kind: (typeof kinds)[number], arrays: (ArrayBufferView | null)[], count: number) => {
+    const layers = arrays.length
     // ponytail: rows grow with capacity; past ~2M entities (2048 rows) split into more textures
     const rows = Math.ceil((arrays[0] as Uint8Array).length / 1024)
     gl.activeTexture(gl.TEXTURE0 + kind.unit)
@@ -196,8 +242,10 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
     gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, unpack)
     gl.bufferData(gl.PIXEL_UNPACK_BUFFER, bytes * layers, gl.STREAM_DRAW)
     for (let layer = 0; layer < layers; layer++) {
+      const a = arrays[layer]
+      if (!a) continue // nothing reads this layer this frame (see SpriteData)
       const offset = layer * bytes
-      gl.bufferSubData(gl.PIXEL_UNPACK_BUFFER, offset, arrays[layer], 0, count)
+      gl.bufferSubData(gl.PIXEL_UNPACK_BUFFER, offset, a, 0, count)
       if (full) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, 1024, full, 1, kind.format, kind.type, offset)
       if (rest) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, full, layer, rest, 1, 1, kind.format, kind.type, offset + full * 1024 * (bytes / count))
     }
@@ -249,10 +297,9 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
       // 3D uploads from arrays reject the premultiply flag that image uploads set.
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
-      // Interpolate fields are only read when something interpolates.
-      upload(kinds[0], floats, count, blend >= 0 ? floats.length : floats.length - 3)
-      upload(kinds[1], uints, count, uints.length)
-      upload(kinds[2], bytes, count, blend >= 0 ? bytes.length : bytes.length - 2)
+      upload(kinds[0], floats, count)
+      upload(kinds[1], uints, count)
+      upload(kinds[2], bytes, count)
       gl.activeTexture(gl.TEXTURE0)
       gl.useProgram(program)
       gl.uniform1f(uBlend, blend)
@@ -272,6 +319,7 @@ function webgl2Backend(canvas: HTMLCanvasElement, background: [number, number, n
       gl.bufferData(gl.ARRAY_BUFFER, ids.subarray(0, count), gl.STREAM_DRAW)
       gl.uniform4f(uCell, texture.fu, texture.fv, texture.su, texture.sv)
       gl.uniform4f(uGrid, texture.mu, texture.mv, texture.columns, texture.frames)
+      gl.uniform2f(uTexSize, texture.width, texture.height)
       gl.bindTexture(gl.TEXTURE_2D, texture.handle)
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count)
     },
