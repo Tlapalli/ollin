@@ -5,6 +5,11 @@
 - `Tiling` repeats a sprite's frame to fill it, with a scroll offset: scrolling backgrounds, parallax, water, floors.
 - Parent and child: `attach(world, sword, hero, { x: 12, y: -4 })` keeps a child at an offset from its parent, turned
   by the parent's rotation, in chains too; children are despawned with their parent.
+- `renderer.clip.set(z, { x, y, w, h })` clips a layer to a rectangle in canvas pixels: scrolling lists, minimaps.
+- `debug()` plugin: `game.get(Debug).line/rect/circle/text` draws debug shapes over the game for one frame, in world
+  or (`debug.screen`) canvas coordinates.
+- Breaking for custom renderer backends only: `Backend.layer(state)` sets screen, additive and clip per z layer;
+  `draw` and `drawParticles` lose those arguments.
 - `spawnText(..., { maxWidth })` wraps text at spaces for dialog boxes; words wider than a line break where they must.
 - `NineSlice` keeps a frame's borders at their size and stretches the middle: UI panels, buttons, dialog boxes.
 

@@ -1,5 +1,5 @@
 import type { Plugin } from './core'
-import { createRenderer, FLOATS_PER_PARTICLE, type Backend, type RendererOptions, type SpriteData, type Texture } from './render'
+import { createRenderer, FLOATS_PER_PARTICLE, type Backend, type Clip, type LayerState, type RendererOptions, type SpriteData, type Texture } from './render'
 import { webgl2 } from './webgl2'
 
 // GPUBufferUsage / GPUTextureUsage flags from the spec; TypeScript's DOM lib has the WebGPU types but not these globals.
@@ -274,7 +274,8 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
   /** The layer stride `dataGroup` was made for. */
   let groupStride = 0
   const pool: GPUBuffer[] = []
-  const draws: { particles?: GPUBuffer; first: number; count: number; texture: GPUBindGroup; screen: boolean; additive: boolean }[] = []
+  const draws: { particles?: GPUBuffer; first: number; count: number; texture: GPUBindGroup; layer: LayerState }[] = []
+  let layer: LayerState = { screen: false, additive: false, clip: null }
   const params = new ArrayBuffer(8)
   // Atlas frame table; starts as one zero frame so the binding is never empty.
   let frameBuffer = device.createBuffer({ size: 32, usage: BUFFER_STORAGE | BUFFER_COPY_DST })
@@ -312,14 +313,17 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
       device.queue.writeBuffer(uniforms, 68, params)
       device.queue.writeBuffer(uniforms, 324, params)
     },
-    draw(frameIds, count, texture, screen, additive) {
+    layer(state) {
+      layer = state
+    },
+    draw(frameIds, count, texture) {
       if (used + count > ids.length) {
         const next = new Uint32Array(Math.max(used + count, ids.length * 2))
         next.set(ids.subarray(0, used))
         ids = next
       }
       ids.set(frameIds.subarray(0, count), used)
-      draws.push({ first: used, count, texture: textureGroup(texture), screen, additive })
+      draws.push({ first: used, count, texture: textureGroup(texture), layer })
       used += count
     },
     createParticles(max) {
@@ -328,8 +332,8 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
     writeParticles(buffer, first, particles) {
       device.queue.writeBuffer(buffer, first * FLOATS_PER_PARTICLE * 4, particles)
     },
-    drawParticles(buffer, count, texture, screen, additive) {
-      draws.push({ particles: buffer, first: 0, count, texture: textureGroup(texture), screen, additive })
+    drawParticles(buffer, count, texture) {
+      draws.push({ particles: buffer, first: 0, count, texture: textureGroup(texture), layer })
     },
     end() {
       const encoder = device.createCommandEncoder()
@@ -372,15 +376,27 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
         staging.unmap()
         encoder.copyBufferToBuffer(staging, 0, gpu, 0, bytes)
       }
+      const target = context.getCurrentTexture()
       const pass = encoder.beginRenderPass({
-        colorAttachments: [{ view: context.getCurrentTexture().createView(), clearValue: background, loadOp: 'clear', storeOp: 'store' }],
+        colorAttachments: [{ view: target.createView(), clearValue: background, loadOp: 'clear', storeOp: 'store' }],
       })
       let vertices: GPUBuffer | undefined
       let bound: boolean | undefined
       let piped: GPURenderPipeline | undefined
+      let clipped: Clip | null | undefined
       for (const d of draws) {
         const buffer = d.particles ?? gpu!
-        const next = d.particles ? (d.additive ? additiveParticlePipeline : particlePipeline) : d.additive ? additivePipeline : pipeline
+        const { additive, screen, clip } = d.layer
+        if (clip !== clipped) {
+          // WebGPU rejects a scissor rect outside the target, so clamp it.
+          const x = Math.min(Math.max(0, Math.round(clip?.x ?? 0)), target.width)
+          const y = Math.min(Math.max(0, Math.round(clip?.y ?? 0)), target.height)
+          const right = clip ? Math.min(target.width, Math.max(x, Math.round(clip.x + clip.w))) : target.width
+          const bottom = clip ? Math.min(target.height, Math.max(y, Math.round(clip.y + clip.h))) : target.height
+          pass.setScissorRect(x, y, right - x, bottom - y)
+          clipped = clip
+        }
+        const next = d.particles ? (additive ? additiveParticlePipeline : particlePipeline) : additive ? additivePipeline : pipeline
         if (next !== piped) pass.setPipeline((piped = next))
         if (buffer !== vertices) {
           if (d.particles) pass.setVertexBuffer(0, buffer)
@@ -390,7 +406,7 @@ function webgpuBackend(canvas: HTMLCanvasElement, device: GPUDevice, background:
           }
           vertices = buffer
         }
-        if (d.screen !== bound) pass.setBindGroup(0, (bound = d.screen) ? screenGroup : viewGroup)
+        if (screen !== bound) pass.setBindGroup(0, (bound = screen) ? screenGroup : viewGroup)
         pass.setBindGroup(1, d.texture)
         pass.draw(4, d.count, 0, d.first)
       }
