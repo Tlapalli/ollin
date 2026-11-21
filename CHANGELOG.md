@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- New example game: `examples/tenochtitlan`, a side-scrolling action platformer in four chapters from the arrival of the
+  Spaniards (November 1519) to the night of 30 June 1520, seen from the Mexica side.
 - `fetchTilemap(game, url)` loads a Tiled map once without spawning it; `spawn()` it in each scene. `#map` in `.ollin`
   files now gives that asset (`assets.level.spawn()`), so maps survive scene changes. `loadTilemap` is unchanged.
 - `Tiling` repeats a sprite's frame to fill it, with a scroll offset: scrolling backgrounds, parallax, water, floors.

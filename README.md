@@ -101,7 +101,7 @@ Open `bench/ollin.html?count=N`, `bench/pixi.html?count=N` (`&mode=particle` for
 
 ```bash
 npm install
-npm run dev        # examples: bunnymark, physics, a Tiled platformer, an isometric map, three small complete games (xolo, ocelotl, mictlan) and the PixiJS and Phaser benchmark
+npm run dev        # examples: bunnymark, physics, a Tiled platformer, an isometric map, four small complete games (xolo, ocelotl, mictlan, tenochtitlan) and the PixiJS and Phaser benchmark
 npm test
 npm run typecheck
 ```

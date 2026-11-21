@@ -1,0 +1,4 @@
+// Generated from the .ollin file next to it by @tlapalli/ollin/vite. Do not edit.
+import type { Atlas, Font, Game, TilemapAsset } from "../../src"
+export declare const game: Game
+export declare const assets: { tiles: number; hero: Atlas; soldier: number; crossbow: number; dog: number; captain: number; dummy: number; fire: number; sky: number; volcanoes: number; lake: number; city: number; panel: number; heart: number; cacao: number; gold: number; basket: number; dart: number; bolt: number; canoe: number; spark: number; swing: AudioBuffer; hit: AudioBuffer; break: AudioBuffer; jump: AudioBuffer; hurt: AudioBuffer; pickup: AudioBuffer; throw: AudioBuffer; twang: AudioBuffer; splash: AudioBuffer; bark: AudioBuffer; conch: AudioBuffer; drum: AudioBuffer; start: AudioBuffer; ui: Font; arrival: TilemapAsset; toxcatl: TilemapAsset; uprising: TilemapAsset; night: TilemapAsset }
