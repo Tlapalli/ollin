@@ -5,7 +5,7 @@
 ## Commands
 
 ```bash
-npm run dev        # Vite dev server for examples/ (bunnymark, physics, platformer, iso, xolo, ocelotl, mictlan, bench)
+npm run dev        # Vite dev server for examples/ (bunnymark, physics, platformer, iso, xolo, ocelotl, mictlan, tenochtitlan, bench)
 npm test           # Vitest
 npm run typecheck  # tsc (noEmit)
 npm run build      # dist/: Vite library build (JS) + tsc declarations
@@ -51,6 +51,7 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 - **Clip and layer state:** `renderer.clip` maps a z layer to a rectangle in canvas pixels. The core calls `backend.layer({ screen, additive, clip })` once per z layer, so `draw`/`drawParticles` carry no per-layer flags. WebGL2 disables the scissor in `begin` (it would clip the clear); WebGPU clamps the scissor to the target, which it requires.
 - **Debug drawing** (`src/debug.ts`, `debug()` plugin, `game.get(Debug)`): immediate-mode lines, boxes, circles and text on a Canvas 2D overlay that follows the game canvas, like devtools, so it adds no sprites and works with either backend. World coordinates through the camera by default, `debug.screen` for canvas pixels. Shapes last one frame and are drawn at the end of `render`.
 - **Screen layers and text:** z layers in `renderer.screen` ignore the camera and use canvas pixels (HUD, menus). `renderer.loadFont` renders any CSS font into a white spritesheet: `DEFAULT_CHARS` (ASCII, Latin-1 accents, ñ, ¿, ¡, Nahuatl macron vowels) plus `chars` for extras like arrows. `spawnText` (`src/text.ts`, DOM-free) lays it out as one sprite per character through `font.glyphs` (text is NFC-normalized; missing characters draw `?` and warn once), so text batches and tints like everything else. `text.tint` and `text.alpha` restyle the whole text. `maxWidth` wraps greedily at spaces and breaks only words wider than a whole line. Write player-facing text with real accents; never strip them to fit the font.
+- **Dev server and two engine copies:** examples import the engine from `src/`, so after many hot edits to `src/` Vite can serve two copies of it (different `?t=`), each with its own components, and the renderer of one ignores the sprites of the other (an empty scene, no error). Restart `npm run dev` when that happens. Games that import `@tlapalli/ollin` from `node_modules` are not affected.
 - **Hierarchy** (`Parent`, `attach`, `hierarchy` in `src/components.ts`): a flat component, not a scene graph. The renderer registers the `hierarchy` system in the `render` stage right before drawing; it places each child after its own parent (frame stamps, any query order) from the parent's drawn (interpolated) position, and despawns children whose parent's generation moved on. Game logic in `fixed`/`update` sees last frame's child positions.
 - **Tweens and timers** (`src/tween.ts`) are systems that remove themselves: `game.system` returns a remover. Registered inside a scene, they end with it. Anything that holds an entity across frames must save `world.generation(e)` and stop when it changes, because ids are recycled (see `tween`).
 - **Input** is state, not events: `keys`, `pointer` (last one), `pointers` (every pressed finger, for multi-touch), `gamepads` (Gamepad API, standard mapping, refreshed at the start of `update`), and `pressed` for one-shot actions: what went down this frame (key codes, `Pointer`, `Button0`–`Button16`), cleared in `render`. The plugin sets `touch-action: none` on the canvas.
@@ -80,5 +81,6 @@ Run `npm test` and `npm run typecheck` before calling a change done. For renderi
 16. Render interpolation, kinematic bodies and the `physics` stage, GPU particles, radix y-sort (done).
 17. Dogfooding games `examples/ocelotl` (isometric waves) and `examples/mictlan` (side-scrolling action platformer), `map.tileAt`, Tiled flips, untextured sprites (done).
 18. GPU-side sprite data: the shader reads components by entity id, batches cached across frames; ahead of PixiJS's ParticleContainer at 1k–50k sprites (done).
+19. Dogfooding game `examples/tenochtitlan` (four chapters, 1519-1520, Mexica side; pixel art by Codex from a written brief): it found `fetchTilemap` (maps must load once and spawn per scene), `NineSlice.scale`, font cells that fit accents, and typographic punctuation in fonts (done).
 
 Out of scope for now: editor, networking, Canvas2D renderer.

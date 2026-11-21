@@ -1,0 +1,46 @@
+// Everything Tenochtitlan loads, declared once and compiled by the ollin() Vite plugin (examples/vite.config.ts).
+// The pixel art comes from Codex (.specs/tenochtitlan-art-brief.md); sounds and maps from .specs/tenochtitlan-assets.py.
+#game(background: #0b0a0c, pixelArt: true)
+
+#texture tiles     ./tiles.png       (frame: 16x16)
+#atlas   hero      ./hero.json
+#texture soldier   ./soldier.png     (frame: 32x32)
+#texture crossbow  ./crossbowman.png (frame: 32x32)
+#texture dog       ./dog.png         (frame: 32x24)
+#texture captain   ./captain.png     (frame: 64x64)
+#texture dummy     ./dummy.png       (frame: 16x32)
+#texture fire      ./fire.png        (frame: 16x16)
+#texture sky       ./sky.png
+#texture volcanoes ./volcanoes.png
+#texture lake      ./lake.png
+#texture city      ./city.png
+#texture panel     ./panel.png
+#texture heart     ./heart.png
+#texture cacao     ./cacao.png
+#texture gold      ./gold.png
+#texture basket    ./basket.png
+#texture dart      ./dart.png
+#texture bolt      ./bolt.png
+#texture canoe     ./canoe.png
+#texture spark     ./spark.png       (filter: linear)
+
+#sound swing  ./swing.wav
+#sound hit    ./hit.wav
+#sound break  ./break.wav
+#sound jump   ./jump.wav
+#sound hurt   ./hurt.wav
+#sound pickup ./pickup.wav
+#sound throw  ./throw.wav
+#sound twang  ./bolt.wav
+#sound splash ./splash.wav
+#sound bark   ./bark.wav
+#sound conch  ./conch.wav
+#sound drum   ./drum.wav
+#sound start  ./start.wav
+
+#font ui (family: "ui-monospace, monospace", size: 48, weight: bold)
+
+#map arrival  ./arrival.tmj
+#map toxcatl  ./toxcatl.tmj
+#map uprising ./uprising.tmj
+#map night    ./night.tmj
