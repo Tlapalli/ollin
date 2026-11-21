@@ -30,8 +30,9 @@ export const Tiling = defineComponent({ w: f32, h: f32, x: f32, y: f32 })
 /**
  * Nine-slice scaling for UI panels, buttons and dialog boxes: the borders (in image pixels) keep their size and only
  * the middle stretches, so one small image fits any `Sprite.w`/`h`. `[NineSlice, { left: 8, right: 8, top: 8, bottom: 8 }]`.
+ * `scale` draws the borders bigger (2 = each image pixel covers 2x2 sprite pixels), for pixel art UI scaled to the screen.
  */
-export const NineSlice = defineComponent({ left: f32, right: f32, top: f32, bottom: f32 })
+export const NineSlice = defineComponent({ left: f32, right: f32, top: f32, bottom: f32, scale: f32 }, { scale: 1 })
 
 /**
  * Draws the entity between its last two fixed-tick transforms (by `game.fixedAlpha`), for things that move in `fixed`

@@ -145,5 +145,5 @@ it('uploads Tiling and NineSlice fields only while some entity has them, and the
   expect(last.bytes[5]![e]).toBe(1)
   game.world.add(e, NineSlice, { left: 4 })
   game.step(0)
-  expect(uploads.at(-1)!.floats.slice(14)).toEqual([NineSlice.left, NineSlice.right, NineSlice.top, NineSlice.bottom])
+  expect(uploads.at(-1)!.floats.slice(14)).toEqual([NineSlice.left, NineSlice.right, NineSlice.top, NineSlice.bottom, NineSlice.scale])
 })

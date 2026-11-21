@@ -86,7 +86,10 @@ struct Fragment {
     if (out.mode == 1u) {
       out.params = vec4f(select(source.x, F(10u, e), F(10u, e) > 0.0), select(source.y, F(11u, e), F(11u, e) > 0.0), F(12u, e), F(13u, e));
     } else {
-      out.params = vec4f(F(14u, e), F(15u, e), F(16u, e), F(17u, e));
+      // NineSlice works in image pixels scaled by its scale: the frame and its borders are scale times bigger.
+      let k = max(F(18u, e), 1e-4);
+      out.size = vec4f(size, source * k);
+      out.params = vec4f(F(14u, e), F(15u, e), F(16u, e), F(17u, e)) * k;
     }
     trim = vec4f(0.0, 0.0, 1.0, 1.0); // both fill the whole sprite
   }
@@ -174,7 +177,7 @@ interface GpuTexture {
 // Component layers start at multiples of this many entities, so every layer (bytes included) is 256-byte aligned.
 const LAYER_ALIGN = 64
 // Layer counts per type, as in SpriteData.
-const FLOAT_LAYERS = 18
+const FLOAT_LAYERS = 19
 const UINT_LAYERS = 2
 const BYTE_LAYERS = 7
 
